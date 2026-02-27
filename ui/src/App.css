@@ -1,5 +1,4 @@
 :root {
-  /* Почти полностью серый тёмный UI */
   --bg: #0b0d12;
   --bg2: #10131a;
 
@@ -11,14 +10,10 @@
   --muted: rgba(255, 255, 255, 0.66);
   --muted2: rgba(255, 255, 255, 0.52);
 
-  /* Акцент почти серый (без явного синего) */
   --accent: rgba(255, 255, 255, 0.09);
   --accent-border: rgba(255, 255, 255, 0.16);
-  --accent-strong: rgba(255, 255, 255, 0.12);
 
-  /* ЕДВА холодный оттенок — только для фокуса/ссылок (намёк) */
   --cool: rgba(185, 200, 230, 0.20);
-  --cool-strong: rgba(185, 200, 230, 0.28);
 
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.38);
   --radius: 14px;
@@ -28,20 +23,27 @@
   --drawer-w: 340px;
 }
 
+* { box-sizing: border-box; }
+
+/* Scrollbars: серые */
 * {
-  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) rgba(255, 255, 255, 0.04);
 }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  border: 2px solid rgba(0, 0, 0, 0.28);
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.20); }
 
-/* Тёмные нативные контролы (где поддерживается) */
-html {
-  color-scheme: dark;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-}
+html { color-scheme: dark; }
+html, body, #root { height: 100%; }
 
 body {
   margin: 0;
@@ -54,20 +56,13 @@ body {
   color: var(--text);
 }
 
-a {
-  color: rgba(220, 225, 235, 0.92); /* почти серый */
-  text-decoration: none;
-}
-a:hover {
-  text-decoration: underline;
-}
+a { color: rgba(220, 225, 235, 0.92); text-decoration: none; }
+a:hover { text-decoration: underline; }
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
 }
-
-/* ---------------- Layout ---------------- */
 
 .app {
   height: 100%;
@@ -75,23 +70,23 @@ a:hover {
   overflow: hidden;
 }
 
-/* Left rail with vertical labels */
+/* Rail */
 .rail {
   width: var(--rail-w);
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px 8px;
+  gap: 8px;
+  padding: 8px 6px;
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(8px);
 }
 
 .rail__logo {
-  height: 44px;
-  width: 44px;
-  margin: 2px auto 6px;
+  height: 42px;
+  width: 42px;
+  margin: 2px auto 4px;
   border-radius: 14px;
   display: grid;
   place-items: center;
@@ -115,10 +110,10 @@ a:hover {
   color: var(--muted2);
 }
 
-/* Vertical rail buttons */
+/* Rail buttons */
 .rail-btn {
   width: 100%;
-  min-height: 150px;
+  min-height: 140px;
   border-radius: 14px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.04);
@@ -127,51 +122,47 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 6px;
+  padding: 8px 6px;
   transition: 160ms ease;
 }
-
 .rail-btn:hover {
   background: rgba(255, 255, 255, 0.055);
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(255, 255, 255, 0.82);
 }
-
 .rail-btn--active {
   background: var(--accent);
   border-color: var(--accent-border);
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(255, 255, 255, 0.90);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
 }
 
-/* Вертикальная подпись читаемо и ровно */
 .rail-btn__text {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 750;
-  letter-spacing: 0.2px;
+  font-size: 13px;
+  font-weight: 520;
+  letter-spacing: 0.35px;
   text-align: center;
 }
 
-/* Drawers area */
+/* Drawers */
 .drawers {
   display: flex;
   align-items: stretch;
-  gap: 10px;
-  padding: 10px;
+  gap: 8px;
+  padding: 8px;
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.02);
   overflow-x: auto;
   overflow-y: hidden;
-  max-width: calc(var(--drawer-w) * 3 + 40px);
+  max-width: calc(var(--drawer-w) * 3 + 34px);
 }
 
-/* Drawer panel */
 .drawer {
   width: var(--drawer-w);
   min-width: var(--drawer-w);
-  height: calc(100vh - 20px);
+  height: calc(100vh - 16px);
   border-radius: var(--radius2);
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
@@ -186,22 +177,23 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 12px;
+  padding: 10px 10px;
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);
 }
 
 .drawer__title {
-  font-weight: 780;
-  letter-spacing: 0.2px;
+  font-weight: 520;
+  letter-spacing: 0.25px;
+  color: var(--muted);
 }
 
 .drawer__body {
-  padding: 12px;
+  padding: 10px;
   overflow: auto;
 }
 
-/* Main area */
+/* Main */
 .main {
   flex: 1;
   height: 100%;
@@ -213,15 +205,13 @@ a:hover {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.03);
 }
 
-.topbar__spacer {
-  flex: 1;
-}
+.topbar__spacer { flex: 1; }
 
 .tabs {
   display: flex;
@@ -231,33 +221,37 @@ a:hover {
 }
 
 .content {
-  padding: 16px;
+  padding: 10px 12px;
   overflow: auto;
 }
 
-/* ---------------- Components ---------------- */
-
+/* Cards */
 .card {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
   border-radius: var(--radius2);
-  padding: 16px;
+  padding: 12px;
   box-shadow: var(--shadow);
 }
 
 .card h2 {
-  margin: 0 0 10px;
-  font-size: 20px;
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 520;
+  letter-spacing: 0.25px;
+  color: var(--muted);
 }
 
 .muted {
   color: var(--muted);
-  margin: 0 0 12px;
+  margin: 0 0 10px;
+  font-weight: 520;
+  letter-spacing: 0.25px;
 }
 
 .placeholder {
-  margin-top: 12px;
-  padding: 12px;
+  margin-top: 10px;
+  padding: 10px;
   border-radius: var(--radius);
   border: 1px dashed rgba(255, 255, 255, 0.16);
   color: var(--muted);
@@ -269,7 +263,7 @@ a:hover {
 .secondary-btn,
 .icon-btn,
 .tab-btn {
-  border: 1px solid transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
   padding: 10px 12px;
   color: rgba(255, 255, 255, 0.92);
@@ -283,94 +277,206 @@ a:hover {
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(255, 255, 255, 0.16);
 }
-.primary-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
+.primary-btn:hover { background: rgba(255, 255, 255, 0.12); }
 
 .secondary-btn:hover,
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.09);
-}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.09); }
 
 .primary-btn:disabled,
-.secondary-btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
+.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-.icon-btn {
-  padding: 8px 10px;
-}
+.icon-btn { padding: 8px 10px; }
 
 .tab-btn {
   padding: 8px 10px;
-  font-weight: 760;
+  font-weight: 520;
+  letter-spacing: 0.25px;
   color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.10);
 }
 .tab-btn:hover {
-  color: rgba(255, 255, 255, 0.90);
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.06);
 }
 .tab-btn--active {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 650;
 }
 
-.ghost-link {
-  color: rgba(220, 225, 235, 0.92);
-  font-weight: 700;
-}
+.ghost-link { color: rgba(220, 225, 235, 0.92); font-weight: 700; }
 
-/* Inputs */
+/* Labels */
 .label {
   display: grid;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: 10px;
   font-size: 12px;
   color: var(--muted);
+  font-weight: 520;
+  letter-spacing: 0.25px;
 }
 
+/* Нативный select: красивое поле (раскрытый список — ограничение браузера) */
 .select {
   width: 100%;
-  padding: 10px 12px;
+  height: 42px;
+  padding: 0 40px 0 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.22);
-  color: rgba(255, 255, 255, 0.92);
-  outline: none;
-}
 
-/* Читаемость выпадающего списка */
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.20);
+  color: rgba(255,255,255,0.92);
+
+  outline: none;
+  cursor: pointer;
+  transition: 140ms ease;
+
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.70) 50%),
+    linear-gradient(135deg, rgba(255,255,255,0.70) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 18px,
+    calc(100% - 12px) 18px;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 22px rgba(0,0,0,0.18);
+}
+.select:hover {
+  background: rgba(0,0,0,0.26);
+  border-color: rgba(255,255,255,0.16);
+}
+.select:focus {
+  border-color: rgba(185,200,230,0.32);
+  box-shadow:
+    0 0 0 3px rgba(185,200,230,0.10),
+    inset 0 1px 0 rgba(255,255,255,0.06);
+}
 .select option {
   background: #0f1117;
   color: rgba(255, 255, 255, 0.92);
 }
 
-/* Едва “холодный” фокус (намёк) */
-.select:focus {
-  border-color: var(--cool);
-  box-shadow: 0 0 0 3px rgba(185, 200, 230, 0.08);
+/* Graph fields (для FancySelect и кнопки refresh) */
+.field { width: 240px; display: grid; gap: 8px; }
+.field__label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 520;
+  letter-spacing: 0.25px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
 }
+.field__label::after {
+  content: attr(data-en);
+  margin-left: 8px;
+  opacity: 0;
+  transform: translateY(1px);
+  transition: 120ms ease;
+  color: rgba(255,255,255,0.42);
+  font-weight: 520;
+}
+.field__label:hover::after { opacity: 1; }
 
-/* Sections inside drawer */
+/* FancySelect styling (Graph) */
+.fselect {
+  width: 100%;
+  height: 42px;
+  border-radius: 12px;
+
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.20);
+  color: rgba(255,255,255,0.92);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 12px;
+  cursor: pointer;
+
+  transition: 140ms ease;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 22px rgba(0,0,0,0.18);
+}
+.fselect:hover {
+  background: rgba(0,0,0,0.26);
+  border-color: rgba(255,255,255,0.16);
+}
+.fselect:active { transform: scale(0.995); }
+.fselect--disabled { opacity: 0.55; cursor: not-allowed; }
+
+.fselect__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fselect__placeholder { color: rgba(255,255,255,0.48); }
+.fselect__chev { opacity: 0.75; margin-left: 10px; }
+
+/* Portal menu (Graph) */
+.fselect__menu {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(10, 12, 16, 0.96);
+  box-shadow: 0 22px 46px rgba(0,0,0,0.55);
+  backdrop-filter: blur(12px);
+}
+.fselect__menu-inner {
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px;
+}
+.fselect__item {
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255,255,255,0.90);
+  text-align: left;
+  border-radius: 12px;
+  padding: 10px 10px;
+  cursor: pointer;
+  transition: 120ms ease;
+  display: flex;
+  align-items: center;
+}
+.fselect__item:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.10);
+}
+.fselect__item--active {
+  background: rgba(185,200,230,0.10);
+  border-color: rgba(185,200,230,0.18);
+}
+.fselect__item--disabled { opacity: 0.55; cursor: default; }
+.fselect__item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Sections */
 .sidebar__section {
-  margin-bottom: 14px;
-  padding-bottom: 14px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
-.sidebar__section:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
+.sidebar__section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 
 .sidebar__section-title {
   font-size: 12px;
   letter-spacing: 0.25px;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.78);
-  margin-bottom: 10px;
-  font-weight: 850;
+  text-transform: none;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 520;
 }
 
 .kv {
@@ -380,11 +486,7 @@ a:hover {
   align-items: center;
   margin: 8px 0;
 }
-
-.kv__k {
-  color: var(--muted2);
-  font-size: 12px;
-}
+.kv__k { color: var(--muted2); font-size: 12px; }
 .kv__v {
   display: flex;
   align-items: center;
@@ -394,55 +496,17 @@ a:hover {
 }
 
 .hint {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
-}
-
-/* Result box */
-.result {
-  margin-top: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: var(--radius);
-  background: rgba(0, 0, 0, 0.16);
-  overflow: hidden;
-}
-.result__row {
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
-}
-.result__row:last-child {
-  border-bottom: none;
-}
-.result__k {
-  color: var(--muted2);
-  font-size: 12px;
-}
-.result__v {
-  font-size: 13px;
-}
-
-/* Badges */
-.badge {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.86);
-}
-.badge--good {
-  background: rgba(0, 255, 160, 0.10);
-  border-color: rgba(0, 255, 160, 0.20);
+  font-weight: 520;
+  letter-spacing: 0.25px;
 }
 
 /* Messages */
 .ok {
-  margin-top: 10px;
+  margin-top: 8px;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(0, 255, 160, 0.22);
@@ -451,9 +515,8 @@ a:hover {
   font-size: 12px;
   line-height: 1.35;
 }
-
 .error {
-  margin-top: 10px;
+  margin-top: 8px;
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid rgba(255, 90, 90, 0.30);
@@ -461,4 +524,263 @@ a:hover {
   color: rgba(255, 255, 255, 0.92);
   font-size: 12px;
   line-height: 1.35;
+}
+
+/* GraphBar layout */
+.graphbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.graphbar__spacer { flex: 1; }
+.graphbar__controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Graph canvas: выше (меньше пустоты снизу) */
+.graph-canvas {
+  max-width: none;
+  padding: 0;
+  overflow: hidden;
+
+  /* было ниже — делаем выше */
+  height: calc(100vh - 150px);
+  min-height: 620px;
+}
+
+/* Brand title (LangGraph): золото */
+.lg-brand {
+  font-weight: 950;
+  letter-spacing: 0.8px;
+  font-size: 44px;
+  line-height: 1;
+
+  /* золото/латунь */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 243, 200, 0.98),
+    rgba(231, 192, 110, 0.92),
+    rgba(170, 120, 45, 0.86)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  /* объём/отсечка по ребру */
+  text-shadow:
+    0 1px 0 rgba(0,0,0,0.62),
+    0 10px 22px rgba(0,0,0,0.34),
+    0 0 18px rgba(255, 215, 120, 0.10);
+}
+
+/* ---------------- ReactFlow overrides ---------------- */
+
+.react-flow__edge-path {
+  stroke: rgba(255, 255, 255, 0.28) !important;
+  stroke-width: 1.6 !important;
+}
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: rgba(185, 200, 230, 0.38) !important;
+}
+.react-flow__edge-text {
+  fill: rgba(255, 255, 255, 0.55) !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+.react-flow__edge-textbg { fill: rgba(0, 0, 0, 0.45) !important; }
+
+.react-flow__handle {
+  width: 10px !important;
+  height: 10px !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  background: rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Nodes */
+.lg-node .react-flow__node-default,
+.lg-node.react-flow__node-default {
+  border-radius: 16px !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26) !important;
+  padding: 10px 12px !important;
+}
+.lg-node--start .react-flow__node-default,
+.lg-node--start.react-flow__node-default {
+  border-color: rgba(0, 255, 160, 0.24) !important;
+  background: rgba(0, 255, 160, 0.08) !important;
+}
+.lg-node--end .react-flow__node-default,
+.lg-node--end.react-flow__node-default {
+  border-color: rgba(255, 90, 90, 0.26) !important;
+  background: rgba(255, 90, 90, 0.08) !important;
+}
+
+/* MiniMap */
+.react-flow__minimap {
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(0, 0, 0, 0.28) !important;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.28) !important;
+}
+.react-flow__minimap-mask { fill: rgba(0, 0, 0, 0.50) !important; }
+.react-flow__minimap-node {
+  fill: rgba(255, 255, 255, 0.12) !important;
+  stroke: rgba(255, 255, 255, 0.18) !important;
+  stroke-width: 1px !important;
+}
+.react-flow__minimap-node.lg-node--start {
+  fill: rgba(0, 255, 160, 0.18) !important;
+  stroke: rgba(0, 255, 160, 0.28) !important;
+}
+.react-flow__minimap-node.lg-node--end {
+  fill: rgba(255, 90, 90, 0.18) !important;
+  stroke: rgba(255, 90, 90, 0.28) !important;
+}
+
+/* Controls: круглые кнопки + tooltip */
+.react-flow__controls {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  gap: 8px !important;
+}
+
+.react-flow__controls button {
+  position: relative;
+  width: 36px !important;
+  height: 36px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 10px 22px rgba(0, 0, 0, 0.22) !important;
+
+  display: grid !important;
+  place-items: center !important;
+
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 140ms ease !important;
+}
+
+.react-flow__controls button:hover {
+  background: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.20) !important;
+  transform: translateY(-1px) !important;
+}
+.react-flow__controls button:active {
+  transform: translateY(0px) scale(0.98) !important;
+}
+.react-flow__controls button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(185, 200, 230, 0.26) !important;
+  box-shadow:
+    0 0 0 3px rgba(185, 200, 230, 0.08),
+    0 12px 26px rgba(0,0,0,0.28) !important;
+}
+
+/* icons forced light */
+.react-flow__controls button svg {
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+  filter:
+    drop-shadow(0 1px 0 rgba(0,0,0,0.35))
+    drop-shadow(0 0 10px rgba(185,200,230,0.06));
+  opacity: 0.98 !important;
+}
+.react-flow__controls button svg path,
+.react-flow__controls button svg line,
+.react-flow__controls button svg polyline,
+.react-flow__controls button svg polygon,
+.react-flow__controls button svg circle,
+.react-flow__controls button svg rect {
+  fill: rgba(255, 255, 255, 0.90) !important;
+  stroke: rgba(255, 255, 255, 0.90) !important;
+}
+.react-flow__controls button:hover svg path,
+.react-flow__controls button:hover svg line,
+.react-flow__controls button:hover svg polyline,
+.react-flow__controls button:hover svg polygon,
+.react-flow__controls button:hover svg circle,
+.react-flow__controls button:hover svg rect {
+  fill: rgba(255, 255, 255, 0.98) !important;
+  stroke: rgba(255, 255, 255, 0.98) !important;
+}
+
+.react-flow__controls button:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* tooltip from data-tip, hide delay 1s */
+.react-flow__controls button::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 115%;
+  bottom: 50%;
+  transform: translateY(50%);
+  white-space: nowrap;
+
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.25px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+
+  opacity: 0;
+  pointer-events: none;
+
+  transition: opacity 120ms ease, transform 120ms ease;
+  transition-delay: 1s;
+}
+.react-flow__controls button::before {
+  content: "";
+  position: absolute;
+  left: 104%;
+  bottom: 50%;
+  width: 10px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  transform: translateY(50%) rotate(45deg);
+
+  opacity: 0;
+  pointer-events: none;
+
+  transition: opacity 120ms ease;
+  transition-delay: 1s;
+}
+.react-flow__controls button:hover::after,
+.react-flow__controls button:focus-visible::after {
+  opacity: 1;
+  transform: translateY(50%) translateX(2px);
+  transition-delay: 0s;
+}
+.react-flow__controls button:hover::before,
+.react-flow__controls button:focus-visible::before {
+  opacity: 1;
+  transition-delay: 0s;
+}
+.react-flow__controls button:disabled::after,
+.react-flow__controls button:disabled::before {
+  content: "";
+  display: none;
 }

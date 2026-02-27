@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import "./App.css";
+import "reactflow/dist/style.css";
+import GraphView from "./GraphView.jsx";
 
 function TabButton({ active, onClick, children }) {
   return (
@@ -74,23 +77,161 @@ function PanelShell({ title, onClose, children }) {
   );
 }
 
-export default function App() {
-  // Основные вкладки (центр)
-  const [tab, setTab] = useState("run");
+/**
+ * Кастомный select (чтобы реально стилизовать выпадающий список и не обрезалось).
+ * - меню рисуем порталом в document.body (position: fixed)
+ * - есть hover-цвета, скролл, нормальные радиусы
+ */
+function FancySelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder = "—",
+  tip, // строка для tooltip в заголовке (например "Раскладка (Layout)")
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  const [menuPos, setMenuPos] = useState({ left: 0, top: 0, width: 260, dir: "down" });
 
-  // Выезжающие панели: можно открыть несколько
-  // порядок = порядок “стопки” слева направо
+  const selected = options.find((o) => String(o.value) === String(value)) || null;
+
+  const close = useCallback(() => setOpen(false), []);
+
+  const computePos = useCallback(() => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const width = r.width;
+    const maxH = 320;
+    const spaceBelow = window.innerHeight - r.bottom - 12;
+    const spaceAbove = r.top - 12;
+
+    const dir = spaceBelow >= Math.min(maxH, 220) ? "down" : spaceAbove > spaceBelow ? "up" : "down";
+    const top = dir === "down" ? r.bottom + 6 : Math.max(12, r.top - 6 - Math.min(maxH, 300));
+    setMenuPos({
+      left: Math.min(window.innerWidth - 12 - width, Math.max(12, r.left)),
+      top,
+      width,
+      dir,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computePos();
+
+    const onDoc = (e) => {
+      const b = btnRef.current;
+      const m = menuRef.current;
+      if (!b || !m) return;
+      if (b.contains(e.target) || m.contains(e.target)) return;
+      close();
+    };
+
+    const onKey = (e) => {
+      if (e.key === "Escape") close();
+    };
+
+    const onReflow = () => computePos();
+
+    document.addEventListener("mousedown", onDoc, true);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+
+    return () => {
+      document.removeEventListener("mousedown", onDoc, true);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, close, computePos]);
+
+  const menu = open
+    ? createPortal(
+        <div
+          ref={menuRef}
+          className="fselect__menu"
+          style={{
+            left: menuPos.left,
+            top: menuPos.top,
+            width: menuPos.width,
+          }}
+          role="listbox"
+        >
+          <div className="fselect__menu-inner">
+            {options.length === 0 ? (
+              <div className="fselect__item fselect__item--disabled">{placeholder}</div>
+            ) : (
+              options.map((o) => {
+                const isActive = String(o.value) === String(value);
+                return (
+                  <button
+                    key={String(o.value)}
+                    type="button"
+                    className={`fselect__item ${isActive ? "fselect__item--active" : ""}`}
+                    onClick={() => {
+                      onChange?.(o.value);
+                      close();
+                    }}
+                    title={o.title || ""}
+                  >
+                    <span className="fselect__item-label">{o.label}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  return (
+    <label className="label">
+      <span className="label__row">
+        <span className="label__text">{label}</span>
+        {tip ? <span className="label__tip" title={tip}>{tip}</span> : null}
+      </span>
+
+      <button
+        ref={btnRef}
+        type="button"
+        className={`fselect ${disabled ? "fselect--disabled" : ""}`}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        aria-expanded={open ? "true" : "false"}
+        disabled={disabled}
+      >
+        <span className="fselect__value">
+          {selected ? selected.label : <span className="fselect__placeholder">{placeholder}</span>}
+        </span>
+        <span className="fselect__chev" aria-hidden="true">▾</span>
+      </button>
+
+      {menu}
+    </label>
+  );
+}
+
+export default function App() {
+  const [tab, setTab] = useState("run");
   const [openPanels, setOpenPanels] = useState(["general"]);
 
-  // General / API
   const [apiStatus, setApiStatus] = useState("не проверял");
   const [apiError, setApiError] = useState("");
 
-  // Run ping demo
+  const [assistantId, setAssistantId] = useState("");
+  const [assistantName, setAssistantName] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantErr, setAssistantErr] = useState("");
+  const [assistantInfo, setAssistantInfo] = useState("");
+
   const [runAnswer, setRunAnswer] = useState("");
   const [runModel, setRunModel] = useState("");
 
-  // Локальные модели (Ollama) через ui_proxy (/ui/*)
   const [modelsLoading, setModelsLoading] = useState(false);
   const [models, setModels] = useState([]);
   const [currentModel, setCurrentModel] = useState("");
@@ -124,6 +265,8 @@ export default function App() {
     setApiError("");
     setSaveError("");
     setSaveInfo("");
+    setAssistantErr("");
+    setAssistantInfo("");
     setOpenPanels((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
       return [...prev, id];
@@ -134,7 +277,31 @@ export default function App() {
     setOpenPanels((prev) => prev.filter((x) => x !== id));
   };
 
-  // -------- General/API actions --------
+  const loadAssistants = useCallback(async () => {
+    setAssistantErr("");
+    setAssistantInfo("");
+    setAssistantLoading(true);
+    try {
+      const assistants = await postJson("/api/assistants/search", {});
+      const a = Array.isArray(assistants) ? assistants[0] : null;
+      if (a?.assistant_id) {
+        setAssistantId(a.assistant_id);
+        setAssistantName(a.name || "");
+        setAssistantInfo("Assistant обновлён.");
+      } else {
+        setAssistantId("");
+        setAssistantName("");
+        setAssistantErr("Assistant не найден.");
+      }
+    } catch (e) {
+      setAssistantId("");
+      setAssistantName("");
+      setAssistantErr(String(e?.message || e));
+    } finally {
+      setAssistantLoading(false);
+    }
+  }, []);
+
   const checkApi = async () => {
     setApiError("");
     setApiStatus("проверяю…");
@@ -147,14 +314,14 @@ export default function App() {
     }
   };
 
-  // -------- Local models actions --------
   const loadModels = async () => {
     setSaveError("");
     setSaveInfo("");
     setModelsLoading(true);
     try {
       const data = await getJson("/ui/models");
-      setModels(Array.isArray(data.models) ? data.models : []);
+      const list = Array.isArray(data.models) ? data.models : [];
+      setModels(list);
       setCurrentModel(String(data.current || ""));
       setDefaultModel(String(data.default || ""));
     } catch (e) {
@@ -189,7 +356,6 @@ export default function App() {
     }
   };
 
-  // -------- Run demo --------
   const runPing = async () => {
     setApiError("");
     setRunAnswer("");
@@ -200,6 +366,10 @@ export default function App() {
       if (!a?.assistant_id) {
         throw new Error("Не найден assistant_id. Проверь, что LangGraph сервер запущен.");
       }
+
+      // обновим локально выбранный assistant, чтобы Graph тоже работал сразу
+      setAssistantId(a.assistant_id);
+      setAssistantName(a.name || "");
 
       const out = await postJson("/api/runs/wait", {
         assistant_id: a.assistant_id,
@@ -218,12 +388,14 @@ export default function App() {
     }
   };
 
-  // автозагрузка моделей при старте (один раз)
   useEffect(() => {
     loadModels();
   }, []);
 
-  // Рельса слева (ярлычки)
+  useEffect(() => {
+    loadAssistants();
+  }, [loadAssistants]);
+
   const rail = (
     <nav className="rail">
       <div className="rail__logo" title="my_langgraph_agent">
@@ -249,7 +421,6 @@ export default function App() {
     </nav>
   );
 
-  // Панели (drawers), открытые слева направо
   const drawers = (
     <div className="drawers">
       {openPanels.map((id) => {
@@ -262,11 +433,7 @@ export default function App() {
                 <div className="kv">
                   <div className="kv__k">LangGraph</div>
                   <div className="kv__v">
-                    <a
-                      href="http://127.0.0.1:2024/docs"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
+                    <a href="http://127.0.0.1:2024/docs" target="_blank" rel="noreferrer">
                       127.0.0.1:2024
                     </a>
                     <Badge tone="good">ON</Badge>
@@ -276,11 +443,7 @@ export default function App() {
                 <div className="kv">
                   <div className="kv__k">UI Proxy</div>
                   <div className="kv__v">
-                    <a
-                      href="http://127.0.0.1:8090/health"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
+                    <a href="http://127.0.0.1:8090/health" target="_blank" rel="noreferrer">
                       127.0.0.1:8090
                     </a>
                     <Badge tone="good">ON</Badge>
@@ -294,6 +457,29 @@ export default function App() {
                     <Badge tone="good">ON</Badge>
                   </div>
                 </div>
+              </div>
+
+              <div className="sidebar__section">
+                <div className="sidebar__section-title">Assistant</div>
+
+                <button
+                  className="secondary-btn"
+                  type="button"
+                  onClick={loadAssistants}
+                  disabled={assistantLoading}
+                  title="Refresh assistant"
+                >
+                  {assistantLoading ? "Обновляю…" : "Обновить assistant"}
+                </button>
+
+                <div className="hint">
+                  ID: <span className="mono">{assistantId || "-"}</span>
+                  <br />
+                  Name: <span className="mono">{assistantName || "-"}</span>
+                </div>
+
+                {assistantInfo ? <div className="ok">{assistantInfo}</div> : null}
+                {assistantErr ? <div className="error">{assistantErr}</div> : null}
               </div>
 
               <div className="sidebar__section">
@@ -323,6 +509,8 @@ export default function App() {
         }
 
         if (id === "local_models") {
+          const modelOptions = models.map((m) => ({ value: m, label: m, title: m }));
+
           return (
             <PanelShell key={id} title="Локальные модели (Ollama)" onClose={() => closePanel(id)}>
               <div className="sidebar__section">
@@ -341,27 +529,16 @@ export default function App() {
                   По умолчанию: <span className="mono">{defaultModel || "-"}</span>
                 </div>
 
-                <label className="label">
-                  Текущая модель
-                  <select
-                    className="select"
-                    value={currentModel}
-                    onChange={(e) => setCurrentModel(e.target.value)}
-                    disabled={modelsLoading || models.length === 0}
-                  >
-                    {models.length === 0 ? (
-                      <option value="">(модели не найдены)</option>
-                    ) : (
-                      models.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
+                <FancySelect
+                  label="Текущая модель"
+                  value={currentModel}
+                  options={modelOptions}
+                  onChange={(v) => setCurrentModel(String(v))}
+                  disabled={modelsLoading || models.length === 0}
+                  placeholder={models.length === 0 ? "(модели не найдены)" : "Выбери модель"}
+                />
 
-                <button className="primary-btn" type="button" onClick={saveModel}>
+                <button className="primary-btn" type="button" onClick={saveModel} style={{ marginTop: 10 }}>
                   Сохранить выбор
                 </button>
 
@@ -411,7 +588,8 @@ export default function App() {
               <div className="sidebar__section">
                 <div className="sidebar__section-title">План</div>
                 <div className="hint">
-                  Здесь появятся инструменты: файловая система, shell, веб-поиск (позже), и управление ими.
+                  Здесь появятся инструменты: файловая система, shell, веб-поиск (позже), и управление
+                  ими.
                 </div>
               </div>
               <div className="placeholder">Скоро.</div>
@@ -429,7 +607,6 @@ export default function App() {
       {rail}
       {drawers}
 
-      {/* Основная часть */}
       <div className="main">
         <div className="topbar">
           <div className="tabs">
@@ -476,13 +653,7 @@ export default function App() {
             </div>
           )}
 
-          {tab === "graph" && (
-            <div className="card">
-              <h2>Graph</h2>
-              <p className="muted">Тут будет визуализация графа (React Flow) + автолэйаут.</p>
-              <div className="placeholder">Скоро: nodes/edges + layout.</div>
-            </div>
-          )}
+          {tab === "graph" && <GraphView assistantId={assistantId} />}
 
           {tab === "history" && (
             <div className="card">

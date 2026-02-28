@@ -98,7 +98,7 @@ a:hover { text-decoration: underline; }
 .rail__group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   overflow-y: auto;
   padding-right: 2px;
@@ -113,8 +113,8 @@ a:hover { text-decoration: underline; }
 /* Rail buttons */
 .rail-btn {
   width: 100%;
-  min-height: 140px;
-  border-radius: 14px;
+  min-height: 92px;
+  border-radius: 12px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
@@ -122,7 +122,7 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 6px;
+  padding: 6px 6px;
   transition: 160ms ease;
 }
 .rail-btn:hover {
@@ -140,9 +140,9 @@ a:hover { text-decoration: underline; }
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 520;
-  letter-spacing: 0.35px;
+  letter-spacing: 0.30px;
   text-align: center;
 }
 
@@ -223,6 +223,8 @@ a:hover { text-decoration: underline; }
 .content {
   padding: 10px 12px;
   overflow: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Cards */
@@ -541,17 +543,6 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 
-/* Graph canvas: выше (меньше пустоты снизу) */
-.graph-canvas {
-  max-width: none;
-  padding: 0;
-  overflow: hidden;
-
-  /* было ниже — делаем выше */
-  height: calc(100vh - 150px);
-  min-height: 620px;
-}
-
 /* Brand title (LangGraph): золото */
 .lg-brand {
   font-weight: 950;
@@ -559,7 +550,6 @@ a:hover { text-decoration: underline; }
   font-size: 44px;
   line-height: 1;
 
-  /* золото/латунь */
   background: linear-gradient(
     180deg,
     rgba(255, 243, 200, 0.98),
@@ -570,7 +560,6 @@ a:hover { text-decoration: underline; }
   background-clip: text;
   color: transparent;
 
-  /* объём/отсечка по ребру */
   text-shadow:
     0 1px 0 rgba(0,0,0,0.62),
     0 10px 22px rgba(0,0,0,0.34),
@@ -783,4 +772,35 @@ a:hover { text-decoration: underline; }
 .react-flow__controls button:disabled::before {
   content: "";
   display: none;
+}
+
+/* =========================================================
+   Универсальный spinner + статус-плашка (для Run/Probe/etc.)
+   ========================================================= */
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.28);
+  border-top-color: rgba(255,255,255,0.88);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.14);
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
 }

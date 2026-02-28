@@ -6,12 +6,14 @@ UI Proxy API для React UI.
    - список моделей Ollama
    - сохранить модель в .env
    - перезапуск tmux-сессии langgraph
+   - probe tool_calls (проверка поддержки tool calling у моделей)
 """
 
 from __future__ import annotations
 
 import os
 import subprocess
+import time
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -21,6 +23,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 
 from react_agent.context import Context
+from react_agent.tools import probe_tool_calls, probe_all_models_tool_calls
 
 
 LANGGRAPH_BASE_URL = os.environ.get("LANGGRAPH_BASE_URL", "http://127.0.0.1:2024")
@@ -36,7 +39,11 @@ LANGGRAPH_TMUX_CMD = os.environ.get(
     "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && langgraph dev --no-browser",
 )
 
-app = FastAPI(title="UI Proxy", version="0.2.0")
+# Кэш probe (чтобы не мучить большие модели постоянно)
+PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
+_PROBE_CACHE: Dict[str, Dict[str, Any]] = {}  # model -> { ok: bool, ts: float, raw: dict }
+
+app = FastAPI(title="UI Proxy", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +60,7 @@ def health() -> Dict[str, Any]:
         "ok": True,
         "langgraph_base": LANGGRAPH_BASE_URL,
         "env_path": str(ENV_PATH),
+        "probe_cache_ttl_seconds": PROBE_CACHE_TTL_SECONDS,
     }
 
 
@@ -173,6 +181,45 @@ def ui_restart_langgraph() -> Dict[str, Any]:
     return _tmux_restart_langgraph()
 
 
+@app.post("/ui/probe-tool-calls")
+def ui_probe_tool_calls(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    payload: { "model": "...", "force": false }
+    """
+    model = str(payload.get("model", "")).strip()
+    force = bool(payload.get("force", False))
+    if not model:
+        return JSONResponse({"ok": False, "error": "model пустой"}, status_code=400)
+
+    now = time.time()
+    cached = _PROBE_CACHE.get(model)
+    if (not force) and cached and (now - float(cached.get("ts", 0.0))) < PROBE_CACHE_TTL_SECONDS:
+        raw = dict(cached.get("raw") or {})
+        raw["cached"] = True
+        return raw
+
+    res = probe_tool_calls.invoke({"model": model})
+    out = dict(res)
+    out["cached"] = False
+    _PROBE_CACHE[model] = {"ok": bool(res.get("supports_tool_calls")), "ts": now, "raw": out}
+    return out
+
+
+@app.post("/ui/probe-all-tool-calls")
+def ui_probe_all_tool_calls(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    payload: { "max_models": 6 }
+    """
+    max_models = int(payload.get("max_models", 6) or 6)
+    if max_models < 1:
+        max_models = 1
+    if max_models > 24:
+        max_models = 24  # safety
+
+    res = probe_all_models_tool_calls.invoke({"max_models": max_models})
+    return dict(res)
+
+
 # ---------- /api proxy to LangGraph ----------
 
 async def _proxy(request: Request, path: str) -> Response:
@@ -236,7 +283,6 @@ async def api_proxy(path: str, request: Request) -> Response:
 
 def main() -> None:
     import uvicorn
-
     uvicorn.run(app, host=PROXY_HOST, port=PROXY_PORT)
 
 

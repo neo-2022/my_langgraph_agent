@@ -41,11 +41,7 @@ function rfNodeFromApi(n) {
   const isStart = n.id === "__start__";
   const isEnd = n.id === "__end__";
 
-  const className = [
-    "lg-node",
-    isStart ? "lg-node--start" : "",
-    isEnd ? "lg-node--end" : "",
-  ]
+  const className = ["lg-node", isStart ? "lg-node--start" : "", isEnd ? "lg-node--end" : ""]
     .filter(Boolean)
     .join(" ");
 
@@ -84,15 +80,7 @@ async function getJson(path) {
  * FancySelect: меню рендерится порталом в body,
  * поэтому не обрезается карточками/overflow.
  */
-function FancySelect({
-  labelRu,
-  labelEn,
-  value,
-  options,
-  onChange,
-  disabled,
-  placeholder = "—",
-}) {
+function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, placeholder = "—" }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
@@ -113,9 +101,7 @@ function FancySelect({
     const spaceAbove = r.top - 10;
     const openDown = spaceBelow >= Math.min(maxH, 220) || spaceBelow >= spaceAbove;
 
-    const top = openDown
-      ? r.bottom + 4
-      : Math.max(10, r.top - 4 - Math.min(maxH, 300));
+    const top = openDown ? r.bottom + 4 : Math.max(10, r.top - 4 - Math.min(maxH, 300));
 
     setMenuPos({
       left: Math.min(window.innerWidth - 10 - width, Math.max(10, r.left)),
@@ -265,7 +251,7 @@ export default function GraphView({ assistantId }) {
     return "";
   }, [assistantId, loading, error, hasGraph]);
 
-  // Tooltips RU+EN для кнопок Controls (без attributes — чтобы не зациклить браузер)
+  // Tooltips RU+EN для Controls
   const hostRef = useRef(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -303,8 +289,19 @@ export default function GraphView({ assistantId }) {
   );
 
   return (
-    <div ref={hostRef} style={{ display: "grid", gap: 10 }}>
-      <div className="card" style={{ maxWidth: "none" }}>
+    <div
+      ref={hostRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        height: "100%",
+        minHeight: 0,
+        width: "100%",
+        alignItems: "stretch",
+      }}
+    >
+      <div className="card" style={{ maxWidth: "none", width: "100%", flex: "0 0 auto" }}>
         <div className="graphbar">
           <div className="lg-brand">LangGraph</div>
           <div className="graphbar__spacer" />
@@ -330,9 +327,7 @@ export default function GraphView({ assistantId }) {
                 disabled={loading || !assistantId}
                 title="Refresh"
               >
-                <span className="fselect__value">
-                  {loading ? "Загрузка…" : "Обновить граф"}
-                </span>
+                <span className="fselect__value">{loading ? "Загрузка…" : "Обновить граф"}</span>
                 <span className="fselect__chev" aria-hidden="true">
                   ↻
                 </span>
@@ -353,8 +348,17 @@ export default function GraphView({ assistantId }) {
         ) : null}
       </div>
 
-      <div className="card graph-canvas">
+      <div
+        className="card graph-canvas"
+        style={{
+          flex: "1 1 auto",
+          minHeight: 0,
+          width: "100%",
+          maxWidth: "none",
+        }}
+      >
         <ReactFlow
+          style={{ width: "100%", height: "100%" }}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}

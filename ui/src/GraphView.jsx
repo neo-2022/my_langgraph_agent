@@ -77,24 +77,39 @@ async function getJson(path) {
 }
 
 /**
- * FancySelect: меню рендерится порталом в body,
- * поэтому не обрезается карточками/overflow.
+ * FancySelect: меню порталом в body.
+ * Даём наружу ref на кнопку (buttonRefExternal), чтобы синхронизировать ширину Refresh.
  */
-function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, placeholder = "—" }) {
+function FancySelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder = "—",
+  tip,
+  buttonRefExternal,
+}) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0, width: 260 });
 
   const selected = options.find((o) => String(o.value) === String(value)) || null;
-
   const close = useCallback(() => setOpen(false), []);
+
+  const setBtnRef = useCallback(
+    (el) => {
+      btnRef.current = el;
+      if (buttonRefExternal) buttonRefExternal.current = el;
+    },
+    [buttonRefExternal]
+  );
 
   const computePos = useCallback(() => {
     const el = btnRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const width = r.width;
+    const w = r.width;
     const maxH = 320;
 
     const spaceBelow = window.innerHeight - r.bottom - 10;
@@ -104,9 +119,9 @@ function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, pla
     const top = openDown ? r.bottom + 4 : Math.max(10, r.top - 4 - Math.min(maxH, 300));
 
     setMenuPos({
-      left: Math.min(window.innerWidth - 10 - width, Math.max(10, r.left)),
+      left: Math.min(window.innerWidth - 10 - w, Math.max(10, r.left)),
       top,
-      width,
+      width: w,
     });
   }, []);
 
@@ -164,7 +179,6 @@ function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, pla
                       onChange?.(o.value);
                       close();
                     }}
-                    title={o.title || ""}
                   >
                     <span className="fselect__item-label">{o.label}</span>
                   </button>
@@ -178,46 +192,41 @@ function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, pla
     : null;
 
   return (
-    <div className="field">
-      <div className="field__label" data-en={labelEn} title={labelEn}>
-        {labelRu}
-      </div>
-
+    <>
       <button
-        ref={btnRef}
+        ref={setBtnRef}
         type="button"
         className={`fselect ${disabled ? "fselect--disabled" : ""}`}
         onClick={() => !disabled && setOpen((v) => !v)}
         aria-expanded={open ? "true" : "false"}
         disabled={disabled}
+        data-tip={tip || ""}
+        aria-label={tip || "Выбор"}
+        style={{
+          width: "max-content",   // ширина по контенту
+          maxWidth: "70vw",
+          marginTop: 0,           // на всякий
+        }}
       >
-        <span className="fselect__value">
+        <span className="fselect__value" style={{ whiteSpace: "nowrap" }}>
           {selected ? selected.label : <span className="fselect__placeholder">{placeholder}</span>}
         </span>
         <span className="fselect__chev" aria-hidden="true">
           ▾
         </span>
       </button>
-
       {menu}
-    </div>
+    </>
   );
 }
 
-export default function GraphView({
-  assistantId,
-  focusNodeId = "",
-  onNodeSelected,
-}) {
+export default function GraphView({ assistantId, focusNodeId = "", onNodeSelected }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const [direction, setDirection] = useState("LR"); // LR | TB
-
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-
-  const [rf, setRf] = useState(null); // ReactFlow instance (onInit)
 
   const hasGraph = nodes.length > 0;
 
@@ -257,155 +266,175 @@ export default function GraphView({
     return "";
   }, [assistantId, loading, error, hasGraph]);
 
-  // Tooltips RU+EN для Controls
-  const hostRef = useRef(null);
+  // Убираем нативные title у ReactFlow Controls
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+    const root = document.querySelector(".react-flow");
+    if (!root) return;
 
-    const mapRuEn = {
-      "zoom in": "Приблизить (Zoom in)",
-      "zoom out": "Отдалить (Zoom out)",
-      "fit view": "Вписать в экран (Fit view)",
-      "toggle interactivity": "Интерактивность (Toggle interactivity)",
-    };
-
-    const apply = () => {
-      const buttons = host.querySelectorAll(".react-flow__controls button");
-      buttons.forEach((b) => {
-        const aria = (b.getAttribute("aria-label") || "").trim();
-        if (!aria) return;
-        const tip = mapRuEn[aria] || aria;
-        b.setAttribute("data-tip", tip);
+    const patch = () => {
+      const buttons = root.querySelectorAll(".react-flow__controls button");
+      buttons.forEach((btn) => {
+        const t = btn.getAttribute("title");
+        if (t && !btn.getAttribute("data-tip")) btn.setAttribute("data-tip", t);
+        if (t) btn.removeAttribute("title");
       });
     };
 
-    apply();
-    const mo = new MutationObserver(() => apply());
-    mo.observe(host, { childList: true, subtree: true });
+    patch();
+    const mo = new MutationObserver(() => patch());
+    mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["title"] });
     return () => mo.disconnect();
   }, []);
 
-  const directionOptions = useMemo(
-    () => [
-      { value: "LR", label: "Left → Right", title: "Left → Right" },
-      { value: "TB", label: "Top → Bottom", title: "Top → Bottom" },
-    ],
-    []
-  );
-
-  // Центрирование на ноде (для синхронизации Journal -> Graph)
+  // RU подписи для Controls (в т.ч. замок)
   useEffect(() => {
-    if (!rf || !focusNodeId) return;
-    const n = nodes.find((x) => String(x.id) === String(focusNodeId));
-    if (!n) return;
+    const root = document.querySelector(".react-flow");
+    if (!root) return;
 
-    const px = (n.position?.x ?? 0) + NODE_W / 2;
-    const py = (n.position?.y ?? 0) + NODE_H / 2;
+    const setTips = () => {
+      const buttons = root.querySelectorAll(".react-flow__controls button");
+      buttons.forEach((btn) => {
+        const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
+        let tip = btn.getAttribute("data-tip") || "";
 
-    try {
-      if (typeof rf.setCenter === "function") {
-        rf.setCenter(px, py, { duration: 260, zoom: Math.max(0.9, rf.getZoom?.() ?? 1) });
-      } else if (typeof rf.fitView === "function") {
-        rf.fitView({ padding: 0.22, duration: 260, nodes: [n] });
-      }
-    } catch {
-      // игнорируем, это UI-улучшение
-    }
-  }, [rf, focusNodeId, nodes]);
+        if (aria.includes("zoom in")) tip = "Увеличить";
+        else if (aria.includes("zoom out")) tip = "Уменьшить";
+        else if (aria.includes("fit view")) tip = "Вписать";
+        else if (aria.includes("interactivity")) tip = "Интерактив";
+        else if (aria.includes("interactive")) tip = "Интерактив";
+        else if (aria.includes("lock")) tip = "Интерактив";
+
+        if (tip) btn.setAttribute("data-tip", tip);
+      });
+    };
+
+    setTips();
+    const id = window.setInterval(setTips, 500);
+    return () => window.clearInterval(id);
+  }, []);
 
   const onNodeClick = useCallback(
-    (_ev, node) => {
-      if (!node?.id) return;
-      onNodeSelected?.(String(node.id));
+    (_e, node) => {
+      onNodeSelected?.(String(node?.id || ""));
     },
     [onNodeSelected]
   );
 
+  const dirOptions = useMemo(
+    () => [
+      { value: "LR", label: "LR (слева→вправо)" },
+      { value: "TB", label: "TB (сверху→вниз)" },
+    ],
+    []
+  );
+
+  // Refresh width = width of the direction button (exact)
+  const dirBtnRef = useRef(null);
+  const [refreshW, setRefreshW] = useState(0);
+
+  const measure = useCallback(() => {
+    const el = dirBtnRef.current;
+    if (!el) return;
+    const w = Math.ceil(el.getBoundingClientRect().width);
+    if (w > 0) setRefreshW(w);
+  }, []);
+
+  useEffect(() => {
+    measure();
+
+    const el = dirBtnRef.current;
+    if (!el) return;
+
+    // Самый надёжный способ: следим за размером кнопки (текст/шрифт/масштаб)
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(el);
+    }
+
+    const onResize = () => measure();
+    window.addEventListener("resize", onResize);
+
+    // Доп. замер чуть позже (шрифты/рендер)
+    const t = window.setTimeout(() => measure(), 50);
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(t);
+      try {
+        ro?.disconnect?.();
+      } catch {}
+    };
+  }, [measure, direction]);
+
   return (
     <div
-      ref={hostRef}
+      className="card"
       style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
         height: "100%",
         minHeight: 0,
-        width: "100%",
-        alignItems: "stretch",
+        padding: 0,
+        display: "flex",
+        flexDirection: "column",
       }}
     >
-      <div className="card" style={{ maxWidth: "none", width: "100%", flex: "0 0 auto" }}>
-        <div className="graphbar">
-          <div className="lg-brand">LangGraph</div>
-          <div className="graphbar__spacer" />
-
-          <div className="graphbar__controls">
-            <FancySelect
-              labelRu="Раскладка"
-              labelEn="Layout"
-              value={direction}
-              options={directionOptions}
-              onChange={(v) => setDirection(String(v))}
-              disabled={false}
-            />
-
-            <div className="field">
-              <div className="field__label" data-en="Refresh" title="Refresh">
-                Обновление
-              </div>
-              <button
-                className="fselect"
-                type="button"
-                onClick={loadGraph}
-                disabled={loading || !assistantId}
-                title="Refresh"
-              >
-                <span className="fselect__value">{loading ? "Загрузка…" : "Обновить граф"}</span>
-                <span className="fselect__chev" aria-hidden="true">
-                  ↻
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {hint ? (
-          <div className={error ? "error" : "hint"} style={{ marginTop: 8 }}>
-            {hint}
-          </div>
-        ) : null}
-        {error ? (
-          <div className="error" style={{ marginTop: 8 }}>
-            {error}
-          </div>
-        ) : null}
-      </div>
-
       <div
-        className="card graph-canvas"
         style={{
-          flex: "1 1 auto",
-          minHeight: 0,
-          width: "100%",
-          maxWidth: "none",
+          padding: 12,
+          borderBottom: "1px solid rgba(255,255,255,0.10)",
+          background: "rgba(255,255,255,0.03)",
         }}
       >
+        <div className="graphbar">
+          <div className="graphbar__controls" style={{ alignItems: "center", flexWrap: "nowrap" }}>
+            <FancySelect
+              value={direction}
+              options={dirOptions}
+              onChange={(v) => setDirection(String(v))}
+              disabled={!assistantId}
+              placeholder="LR/TB"
+              tip="Направление графа (LR/TB)"
+              buttonRefExternal={dirBtnRef}
+            />
+
+            <button
+              className="secondary-btn"
+              type="button"
+              onClick={loadGraph}
+              disabled={!assistantId || loading}
+              data-tip="Обновить граф"
+              aria-label="Обновить граф"
+              style={{
+                height: 42,
+                width: refreshW ? `${refreshW}px` : undefined,
+                marginTop: 0, // ВАЖНО: убрать любые сдвиги
+              }}
+            >
+              {loading ? "Загружаю…" : "Refresh"}
+            </button>
+          </div>
+
+          <div className="graphbar__spacer" />
+
+          <div className="hint" style={{ marginTop: 0 }}>
+            {hint}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0 }}>
         <ReactFlow
-          style={{ width: "100%", height: "100%" }}
+          className="lg-node"
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
-          onInit={setRf}
           fitView
-          fitViewOptions={{ padding: 0.18 }}
-          proOptions={{ hideAttribution: true }}
         >
           <Background />
-          <Controls />
           <MiniMap />
+          <Controls />
         </ReactFlow>
       </div>
     </div>

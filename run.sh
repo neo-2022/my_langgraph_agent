@@ -7,7 +7,6 @@ UI_DIR="$ROOT/ui"
 VENV_ACTIVATE="$ROOT/venv/bin/activate"
 
 LANGGRAPH_PORT="2024"
-SETTINGS_PORT="8088"
 REACT_HOST="127.0.0.1"
 REACT_PORT="5174"
 
@@ -29,15 +28,7 @@ else
   echo "Уже запущено: tmux session langgraph"
 fi
 
-# 2) Settings UI in tmux
-if ! tmux has-session -t settings_ui 2>/dev/null; then
-  tmux new -d -s settings_ui "cd '$AGENT_DIR' && source '$VENV_ACTIVATE' && python -m react_agent.settings_app"
-  echo "Запущено: tmux session settings_ui"
-else
-  echo "Уже запущено: tmux session settings_ui"
-fi
-
-# 3) React UI in tmux
+# 2) React UI in tmux
 if [[ -d "$UI_DIR" ]]; then
   if ! tmux has-session -t ui 2>/dev/null; then
     tmux new -d -s ui "cd '$UI_DIR' && npm run dev -- --host $REACT_HOST --port $REACT_PORT"
@@ -52,7 +43,6 @@ fi
 echo
 echo "LangGraph API:     http://127.0.0.1:$LANGGRAPH_PORT"
 echo "LangGraph Docs:    http://127.0.0.1:$LANGGRAPH_PORT/docs"
-echo "Settings UI:       http://127.0.0.1:$SETTINGS_PORT"
 echo "React UI:          http://$REACT_HOST:$REACT_PORT"
 echo
 echo "Подсказка: логи: tmux attach -t <сессия> (выйти: Ctrl+B затем D)"

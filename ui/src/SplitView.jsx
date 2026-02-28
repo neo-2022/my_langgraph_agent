@@ -2,20 +2,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * SplitView
- * modes: "run" | "graph" | "split"
+ * modes: "run" | "split"
  * - split: resizable horizontal split with draggable divider
  * - stores divider position in localStorage
  *
  * props:
- *   mode: string
- *   onModeChange: (mode)=>void
+ *   mode: "run" | "split"
+ *   onModeChange?: (mode)=>void   // (оставили для совместимости, но UI-кнопок тут больше нет)
  *   left: ReactNode
  *   right: ReactNode
  *   storageKey?: string
  */
 export default function SplitView({
   mode,
-  onModeChange,
+  onModeChange, // eslint-disable-line no-unused-vars
   left,
   right,
   storageKey = "splitview:left_pct",
@@ -38,19 +38,17 @@ export default function SplitView({
     } catch {}
   }, [leftPct, storageKey]);
 
-  // если экран очень узкий — принудительно не мучаем split
+  // если экран очень узкий — split превращаем в вертикальный stack
   const [isNarrow, setIsNarrow] = useState(false);
   useEffect(() => {
-    const calc = () => {
-      setIsNarrow(window.innerWidth < 980);
-    };
+    const calc = () => setIsNarrow(window.innerWidth < 980);
     calc();
     window.addEventListener("resize", calc);
     return () => window.removeEventListener("resize", calc);
   }, []);
 
   const startDrag = (e) => {
-    if (mode !== "split") return;
+    if (mode !== "split" || isNarrow) return;
     const root = rootRef.current;
     if (!root) return;
 
@@ -90,61 +88,13 @@ export default function SplitView({
     window.addEventListener("mouseup", onUp, true);
   };
 
-  const renderToolbar = () => (
-    <div className="sv__toolbar">
-      <button
-        type="button"
-        className={`sv__mode ${mode === "run" ? "sv__mode--active" : ""}`}
-        onClick={() => onModeChange?.("run")}
-        title="Run only"
-      >
-        Run
-      </button>
-      <button
-        type="button"
-        className={`sv__mode ${mode === "graph" ? "sv__mode--active" : ""}`}
-        onClick={() => onModeChange?.("graph")}
-        title="Graph only"
-      >
-        Graph
-      </button>
-      <button
-        type="button"
-        className={`sv__mode ${mode === "split" ? "sv__mode--active" : ""}`}
-        onClick={() => onModeChange?.("split")}
-        title="Split view"
-      >
-        Split
-      </button>
-
-      <div className="sv__spacer" />
-
-      {mode === "split" && !isNarrow ? (
-        <div className="sv__hint mono" title="Потяни разделитель мышью">
-          перетащи разделитель ↔
-        </div>
-      ) : null}
-
-      {isNarrow && mode === "split" ? (
-        <div className="sv__hint mono" title="Слишком узко для Split — используем вертикальный стек">
-          narrow → stack
-        </div>
-      ) : null}
-    </div>
-  );
-
   // layout:
-  // - run or graph: single panel
-  // - split: two panels
-  //   - on narrow: stack vertical (top/bottom) with fixed heights
+  // - run: single left
+  // - split: two panels (или stack на narrow)
   return (
     <div className="sv" ref={rootRef}>
-      {renderToolbar()}
-
       {mode === "run" ? (
         <div className="sv__single">{left}</div>
-      ) : mode === "graph" ? (
-        <div className="sv__single">{right}</div>
       ) : isNarrow ? (
         <div className="sv__stack">
           <div className="sv__stack-pane">{left}</div>
@@ -162,7 +112,7 @@ export default function SplitView({
             role="separator"
             aria-orientation="vertical"
             aria-label="Resize"
-            title="Потяни, чтобы изменить ширину"
+            data-tip="Потяни, чтобы изменить ширину"
           >
             <div className="sv__divider-grip" />
           </div>

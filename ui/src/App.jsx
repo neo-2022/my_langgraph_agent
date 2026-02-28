@@ -6,41 +6,268 @@ import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
 
 function TabButton({ active, onClick, children }) {
+  const en = String(children ?? "").trim();
+  const map = {
+    Run: "Запуск",
+    Graph: "Граф",
+    History: "История",
+    State: "Состояние",
+  };
+  const ru = map[en] || "";
+  const tip = ru; // ТОЛЬКО русский
+
   return (
     <button
       onClick={onClick}
       className={`tab-btn ${active ? "tab-btn--active" : ""}`}
       type="button"
+      data-tip={tip}
+      aria-label={tip}
     >
       {children}
     </button>
   );
 }
-
 function Badge({ children, tone = "neutral" }) {
   return <span className={`badge badge--${tone}`}>{children}</span>;
 }
 
-function IconBtn({ title, onClick, children }) {
+/**
+ * IconBtn:
+ * - НЕ используем title (чтобы не было “старых” браузерных подсказок)
+ * - Рисуем кастомную подсказку порталом
+ * - Авто-позиция вверх/вниз + clamp по краям окна
+ */
+function IconBtn({ label, onClick, children, disabled }) {
+  const btnRef = useRef(null);
+  const tipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0, dir: "down" });
+
+  const computePos = useCallback(() => {
+    const b = btnRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+
+    // Базово: центр по X, решение по Y после измерения tooltip
+    setPos((p) => ({
+      ...p,
+      left: r.left + r.width / 2,
+      top: r.bottom + 10,
+      dir: "down",
+      __anchor: { left: r.left, right: r.right, top: r.top, bottom: r.bottom },
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computePos();
+
+    const onReflow = () => computePos();
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+    return () => {
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, computePos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = tipRef.current;
+    const b = btnRef.current;
+    if (!t || !b) return;
+
+    const r = b.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+
+    const margin = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    // Выбираем направление по месту
+    const spaceBelow = vh - r.bottom - margin;
+    const spaceAbove = r.top - margin;
+
+    const wantUp = spaceAbove >= tr.height + margin && spaceAbove > spaceBelow;
+    let top = wantUp ? r.top - tr.height - margin : r.bottom + margin;
+
+    // Clamp по Y
+    top = Math.max(margin, Math.min(vh - tr.height - margin, top));
+
+    // Центр по X + clamp по X
+    let left = r.left + r.width / 2;
+    const halfW = tr.width / 2;
+    left = Math.max(margin + halfW, Math.min(vw - margin - halfW, left));
+
+    setPos({ left, top, dir: wantUp ? "up" : "down" });
+  }, [open]);
+
+  const tip = open
+    ? createPortal(
+        <div
+          ref={tipRef}
+          style={{
+            position: "fixed",
+            left: pos.left,
+            top: pos.top,
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            padding: "6px 10px",
+            borderRadius: 10,
+            fontSize: 12,
+            lineHeight: 1.2,
+            color: "rgba(255,255,255,0.92)",
+            background: "rgba(0,0,0,0.82)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            maxWidth: 260,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+          }}
+        >
+          {label}
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
-    <button className="icon-btn" type="button" title={title} onClick={onClick}>
-      {children}
-    </button>
+    <>
+      <button
+        ref={btnRef}
+        className="icon-btn"
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        aria-label={label}
+      >
+        {children}
+      </button>
+      {tip}
+    </>
   );
 }
 
-function RailButton({ active, onClick, children, title }) {
+/**
+ * RailButton:
+ * - НЕ используем title (нативный tooltip браузера)
+ * - используем data-tip (наш CSS-tooltip)
+ */
+function RailButton({ active, onClick, children, tip }) {
+  // tip = русский tooltip (и aria-label). Tooltip рисуем порталом, чтобы не обрезался.
+  const btnRef = useRef(null);
+  const tipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0, side: "right" });
+
+  const computeBase = useCallback(() => {
+    const b = btnRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    // базово справа от кнопки, по центру Y
+    setPos({ left: r.right + 10, top: r.top + r.height / 2, side: "right" });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computeBase();
+
+    const onReflow = () => computeBase();
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+    return () => {
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, computeBase]);
+
+  // после рендера tooltip — корректируем сторону/клампы
+  useEffect(() => {
+    if (!open) return;
+    const b = btnRef.current;
+    const t = tipRef.current;
+    if (!b || !t) return;
+
+    const r = b.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    const margin = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const spaceRight = vw - r.right - margin;
+    const spaceLeft = r.left - margin;
+
+    const side =
+      spaceRight >= tr.width + 12 ? "right" : spaceLeft >= tr.width + 12 ? "left" : "right";
+
+    // Y clamp (центрируем по кнопке)
+    let top = r.top + r.height / 2;
+    const halfH = tr.height / 2;
+    top = Math.max(margin + halfH, Math.min(vh - margin - halfH, top));
+
+    // X позиция (tooltip “прилеплен” сбоку)
+    let left = side === "right" ? (r.right + margin) : (r.left - margin);
+    left = Math.max(margin, Math.min(vw - margin, left));
+
+    setPos({ left, top, side });
+  }, [open]);
+
+  const tooltip = open && tip
+    ? createPortal(
+        <div
+          ref={tipRef}
+          style={{
+            position: "fixed",
+            left: pos.left,
+            top: pos.top,
+            transform: pos.side === "right"
+              ? "translateY(-50%)"
+              : "translate(-100%, -50%)",
+            zIndex: 10050,
+            padding: "6px 10px",
+            borderRadius: 10,
+            fontSize: 12,
+            lineHeight: 1.2,
+            color: "rgba(255,255,255,0.92)",
+            background: "rgba(0,0,0,0.82)",
+            border: "1px solid rgba(255,255,255,0.14)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+            maxWidth: 260,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+          }}
+        >
+          {tip}
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
-    <button
-      type="button"
-      className={`rail-btn ${active ? "rail-btn--active" : ""}`}
-      onClick={onClick}
-      title={title}
-    >
-      <span className="rail-btn__text">{children}</span>
-    </button>
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className={`rail-btn ${active ? "rail-btn--active" : ""}`}
+        onClick={onClick}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        aria-label={tip || ""}
+      >
+        <span className="rail-btn__text">{children}</span>
+      </button>
+      {tooltip}
+    </>
   );
 }
+
 
 async function getJson(path) {
   const r = await fetch(path);
@@ -69,9 +296,9 @@ function PanelShell({ title, onClose, children }) {
     <section className="drawer">
       <div className="drawer__header">
         <div className="drawer__title">{title}</div>
-        <IconBtn title="Закрыть" onClick={onClose}>
+        <button className="icon-btn" type="button" onClick={onClose} aria-label="Закрыть">
           ✕
-        </IconBtn>
+        </button>
       </div>
       <div className="drawer__body">{children}</div>
     </section>
@@ -79,8 +306,8 @@ function PanelShell({ title, onClose, children }) {
 }
 
 /**
- * Кастомный select (чтобы реально стилизовать выпадающий список и не обрезалось).
- * - меню рисуем порталом в document.body (position: fixed)
+ * FancySelect:
+ * - меню порталом в document.body (position: fixed)
  */
 function FancySelect({
   label,
@@ -125,6 +352,7 @@ function FancySelect({
       dir === "down"
         ? r.bottom + 6
         : Math.max(12, r.top - 6 - Math.min(maxH, 300));
+
     setMenuPos({
       left: Math.min(window.innerWidth - 12 - width, Math.max(12, r.left)),
       top,
@@ -195,7 +423,6 @@ function FancySelect({
                       onChange?.(o.value);
                       close();
                     }}
-                    title={o.title || ""}
                   >
                     <span className="fselect__item-label">{o.label}</span>
                   </button>
@@ -212,11 +439,7 @@ function FancySelect({
     <label className="label">
       <span className="label__row">
         <span className="label__text">{label}</span>
-        {tip ? (
-          <span className="label__tip" title={tip}>
-            {tip}
-          </span>
-        ) : null}
+        {tip ? <span className="label__tip">{tip}</span> : null}
       </span>
 
       <button
@@ -273,11 +496,16 @@ function prettyJson(obj) {
 
 export default function App() {
   const [tab, setTab] = useState("run");
+
+  // SplitView:
+  // - хранится в localStorage
+  // - повторный клик по "Run": run <-> split
+  const prevTabRef = useRef("run");
   const [splitMode, setSplitMode] = useState(() => {
     try {
-      return localStorage.getItem("splitview:mode") || "split";
+      return localStorage.getItem("splitview:mode") || "run";
     } catch {
-      return "split";
+      return "run";
     }
   });
 
@@ -286,11 +514,26 @@ export default function App() {
       localStorage.setItem("splitview:mode", splitMode);
     } catch {}
   }, [splitMode]);
+
+  useEffect(() => {
+    const prev = prevTabRef.current;
+    if (tab === "run" && prev !== "run") {
+      setSplitMode("run");
+    }
+    prevTabRef.current = tab;
+  }, [tab]);
+
   const [focusNodeId, setFocusNodeId] = useState("");
   const [openPanels, setOpenPanels] = useState(["general"]);
 
   const [apiStatus, setApiStatus] = useState("не проверял");
   const [apiError, setApiError] = useState("");
+
+  const apiTone = useMemo(() => {
+    if (String(apiStatus).startsWith("OK")) return "good";
+    if (String(apiStatus).toLowerCase().includes("ошибка")) return "bad";
+    return "neutral";
+  }, [apiStatus]);
 
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("");
@@ -306,12 +549,92 @@ export default function App() {
   const [saveInfo, setSaveInfo] = useState("");
   const [saveError, setSaveError] = useState("");
 
-  // probe tool_calls
-  const [probeLoading, setProbeLoading] = useState(false);
-  const [probeMaxModels, setProbeMaxModels] = useState(8);
-  const [probeRows, setProbeRows] = useState([]); // [{model, ok, cached, tool_calls_count, error}]
-  const [probeInfo, setProbeInfo] = useState("");
-  const [probeError, setProbeError] = useState("");
+  // tool_calls support cache (localStorage)
+  const TOOLCALLS_CACHE_KEY = "ollama:tool_calls_support";
+  const readToolCallsCache = () => {
+    try {
+      const raw = localStorage.getItem(TOOLCALLS_CACHE_KEY);
+      const obj = raw ? JSON.parse(raw) : {};
+      return obj && typeof obj === "object" ? obj : {};
+    } catch {
+      return {};
+    }
+  };
+  const writeToolCallsCache = (obj) => {
+    try {
+      localStorage.setItem(TOOLCALLS_CACHE_KEY, JSON.stringify(obj || {}));
+    } catch {}
+  };
+
+  const [toolCallsSupport, setToolCallsSupport] = useState(() =>
+    readToolCallsCache()
+  );
+  const [toolCallsProbeInfo, setToolCallsProbeInfo] = useState("");
+  const [toolCallsProbeError, setToolCallsProbeError] = useState("");
+
+  const setToolCallsSupportFor = (model, rec) => {
+    const key = String(model || "").trim();
+    if (!key) return;
+    setToolCallsSupport((prev) => {
+      const next = { ...(prev || {}) };
+      next[key] = {
+        supports_tool_calls: !!rec?.supports_tool_calls,
+        tool_calls_count: Number(rec?.tool_calls_count || 0),
+        ts: Number(rec?.ts || Date.now()),
+      };
+      writeToolCallsCache(next);
+      return next;
+    });
+  };
+
+  const purgeToolCallsCacheNotIn = (modelList) => {
+    const allowed = new Set((modelList || []).map((m) => String(m)));
+    setToolCallsSupport((prev) => {
+      const cur = prev && typeof prev === "object" ? prev : {};
+      const next = {};
+      for (const k of Object.keys(cur)) {
+        if (allowed.has(String(k))) next[k] = cur[k];
+      }
+      writeToolCallsCache(next);
+      return next;
+    });
+  };
+
+  const probeToolCallsSupport = async (model, force = false) => {
+    const mm = String(model || "").trim();
+    if (!mm) return null;
+
+    setToolCallsProbeError("");
+    setToolCallsProbeInfo("");
+
+    if (!force && toolCallsSupport?.[mm]) {
+      setToolCallsProbeInfo("");
+      return toolCallsSupport[mm];
+    }
+
+    try {
+      const out = await postJson("/ui/probe-tool-calls", {
+        model: mm,
+        force: !!force,
+      });
+      if (!out || typeof out !== "object") return null;
+
+      setToolCallsSupportFor(mm, {
+        supports_tool_calls: !!out.supports_tool_calls,
+        tool_calls_count: Number(out.tool_calls_count || 0),
+        ts: Date.now(),
+      });
+
+      setToolCallsProbeInfo("");
+      return {
+        supports_tool_calls: !!out.supports_tool_calls,
+        tool_calls_count: Number(out.tool_calls_count || 0),
+      };
+    } catch (e) {
+      setToolCallsProbeError(String(e?.message || e));
+      return null;
+    }
+  };
 
   // Run tab (stream)
   const [runInput, setRunInput] = useState("Сложение: 2+2=? Просто ответ.");
@@ -322,8 +645,7 @@ export default function App() {
   const abortRef = useRef(null);
   const seenCountRef = useRef(0);
 
-  // Execution Journal (MVP): временно строим из messages/tool_calls.
-  // Синхронизация: клик по событию -> центрируем граф на условной ноде (agent/tools).
+  // Журнал — только для drawer "Журнал"
   const journalEvents = useMemo(() => {
     const infer = (role) => {
       if (role === "tool") return "tools";
@@ -375,10 +697,11 @@ export default function App() {
 
   const panelDefs = useMemo(
     () => [
-      { id: "general", title: "Общее" },
-      { id: "local_models", title: "Локальные модели" },
-      { id: "tools", title: "Инструменты" },
-      { id: "cloud_models", title: "Облачные модели" },
+      { id: "general", title: "General", ruTitle: "Общее" },
+      { id: "local_models", title: "Local models", ruTitle: "Локальные модели" },
+      { id: "tools", title: "Tools", ruTitle: "Инструменты" },
+      { id: "journal", title: "Journal", ruTitle: "Журнал" },
+      { id: "cloud_models", title: "Cloud models", ruTitle: "Облачные модели" },
     ],
     []
   );
@@ -391,8 +714,8 @@ export default function App() {
     setSaveInfo("");
     setAssistantErr("");
     setAssistantInfo("");
-    setProbeError("");
-    setProbeInfo("");
+    setToolCallsProbeError("");
+    setToolCallsProbeInfo("");
     setOpenPanels((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
       return [...prev, id];
@@ -448,6 +771,7 @@ export default function App() {
       const data = await getJson("/ui/models");
       const list = Array.isArray(data.models) ? data.models : [];
       setModels(list);
+      purgeToolCallsCacheNotIn(list);
       setCurrentModel(String(data.current || ""));
       setDefaultModel(String(data.default || ""));
     } catch (e) {
@@ -460,9 +784,14 @@ export default function App() {
   const saveModel = async () => {
     setSaveError("");
     setSaveInfo("");
+    setToolCallsProbeError("");
+    setToolCallsProbeInfo("");
     try {
       const out = await postJson("/ui/model", { model: currentModel });
       if (!out?.ok) throw new Error(out?.error || "Не удалось сохранить модель");
+
+      await probeToolCallsSupport(currentModel, false);
+
       setSaveInfo(
         "Готово. Теперь: 1) нажми «Перезапустить LangGraph сервер»  2) обнови страницу."
       );
@@ -599,63 +928,6 @@ export default function App() {
     }
   };
 
-  const probeAll = async (force = false) => {
-    setProbeError("");
-    setProbeInfo("");
-    setProbeLoading(true);
-    try {
-      const data = await getJson("/ui/models");
-      const list = Array.isArray(data.models) ? data.models : [];
-      if (list.length === 0) {
-        setProbeRows([]);
-        setProbeInfo("Модели не найдены (ollama list пуст).");
-        return;
-      }
-
-      const requested = Number(probeMaxModels) || 8;
-      const maxN = Math.max(1, Math.min(24, requested, list.length));
-      const take = list.slice(0, maxN);
-
-      const rows = [];
-      for (const m of take) {
-        try {
-          const r = await postJson("/ui/probe-tool-calls", {
-            model: m,
-            force: !!force,
-          });
-          rows.push({
-            model: m,
-            ok: !!r.supports_tool_calls,
-            cached: !!r.cached,
-            tool_calls_count: Number(r.tool_calls_count || 0),
-            error: r.error ? String(r.error) : "",
-          });
-        } catch (e) {
-          rows.push({
-            model: m,
-            ok: false,
-            cached: false,
-            tool_calls_count: 0,
-            error: String(e?.message || e),
-          });
-        }
-      }
-
-      setProbeRows(rows);
-      if (list.length > maxN) {
-        setProbeInfo(
-          `Показаны первые ${maxN}/${list.length}. Увеличь лимит (max) если надо.`
-        );
-      } else {
-        setProbeInfo(`Проверено ${list.length} моделей.`);
-      }
-    } catch (e) {
-      setProbeError(String(e?.message || e));
-    } finally {
-      setProbeLoading(false);
-    }
-  };
-
   useEffect(() => {
     loadModels();
   }, []);
@@ -666,7 +938,12 @@ export default function App() {
 
   const rail = (
     <nav className="rail">
-      <div className="rail__logo" title="my_langgraph_agent">
+      <div
+        className="rail__logo"
+        data-tip="my_langgraph_agent"
+        role="img"
+        aria-label="my_langgraph_agent"
+      >
         ⛓️
       </div>
 
@@ -677,7 +954,7 @@ export default function App() {
             active={isOpen(p.id)}
             onClick={() => togglePanel(p.id)}
             title={p.title}
-          >
+           tip={p.ruTitle || p.title}>
             {p.title}
           </RailButton>
         ))}
@@ -743,7 +1020,6 @@ export default function App() {
                   type="button"
                   onClick={loadAssistants}
                   disabled={assistantLoading}
-                  title="Refresh assistant"
                 >
                   {assistantLoading ? "Обновляю…" : "Обновить assistant"}
                 </button>
@@ -768,24 +1044,20 @@ export default function App() {
                 </button>
 
                 <div className="hint">
-                  Статус: <span className="mono">{apiStatus}</span>
+                  Статус:{" "}
+                  <Badge tone={apiTone}>
+                    {String(apiStatus).startsWith("OK")
+                      ? "OK"
+                      : String(apiStatus).toLowerCase().includes("ошибка")
+                      ? "OFF"
+                      : "…"}
+                  </Badge>
+                  <span className="mono" style={{ marginLeft: 8, opacity: 0.85 }}>
+                    {apiStatus}
+                  </span>
                 </div>
 
                 {apiError ? <div className="error">{apiError}</div> : null}
-              </div>
-
-              <div className="sidebar__section">
-                <div className="sidebar__section-title">Ссылки</div>
-                <div className="hint">
-                  <a
-                    className="ghost-link"
-                    href="/api/docs"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    API Docs (через /api)
-                  </a>
-                </div>
               </div>
             </PanelShell>
           );
@@ -797,6 +1069,8 @@ export default function App() {
             label: m,
             title: m,
           }));
+
+          const curRec = currentModel ? toolCallsSupport?.[currentModel] : null;
 
           return (
             <PanelShell
@@ -817,8 +1091,7 @@ export default function App() {
                 </button>
 
                 <div className="hint">
-                  По умолчанию:{" "}
-                  <span className="mono">{defaultModel || "-"}</span>
+                  По умолчанию: <span className="mono">{defaultModel || "-"}</span>
                 </div>
 
                 <FancySelect
@@ -837,6 +1110,7 @@ export default function App() {
                   type="button"
                   onClick={saveModel}
                   style={{ marginTop: 10 }}
+                  disabled={!currentModel}
                 >
                   Сохранить выбор
                 </button>
@@ -857,154 +1131,192 @@ export default function App() {
                   <b>Перезапустить LangGraph сервер</b> → обнови страницу.
                 </div>
               </div>
+
+              <div className="sidebar__section" style={{ marginTop: 10 }}>
+
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    marginTop: 8,
+                  }}
+                >
+                  <button
+                    className="secondary-btn"
+                    type="button"
+                    onClick={() => probeToolCallsSupport(currentModel, false)}
+                    disabled={!currentModel}
+                  >
+                    Проверить (кэш)
+                  </button>
+
+                  <button
+                    className="secondary-btn"
+                    type="button"
+                    onClick={() => probeToolCallsSupport(currentModel, true)}
+                    disabled={!currentModel}
+                  >
+                    Проверить (force)
+                  </button>
+                </div>
+
+                {toolCallsProbeError ? <div className="error">{toolCallsProbeError}</div> : null}
+
+                <div style={{ marginTop: 10 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th
+                          style={{
+                            textAlign: "left",
+                            padding: "6px 4px",
+                            borderBottom: "1px solid rgba(255,255,255,0.12)",
+                          }}
+                        >
+                          Модель
+                        </th>
+                        <th
+                          style={{
+                            textAlign: "center",
+                            padding: "6px 4px",
+                            borderBottom: "1px solid rgba(255,255,255,0.12)",
+                            width: 90,
+                          }}
+                        >
+                          tool_calls
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {models.map((m) => {
+                        const rec = toolCallsSupport?.[m];
+                        const mark = rec
+                          ? rec.supports_tool_calls
+                            ? "✅"
+                            : "❌"
+                          : "—";
+                        return (
+                          <tr key={m}>
+                            <td
+                              style={{
+                                padding: "6px 4px",
+                                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                              }}
+                            >
+                              <span className="mono">{m}</span>
+                            </td>
+                            <td
+                              style={{
+                                textAlign: "center",
+                                padding: "6px 4px",
+                                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                              }}
+                            >
+                              {mark}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {models.length === 0 ? (
+                        <tr>
+                          <td className="hint" style={{ padding: "6px 4px" }} colSpan={2}>
+                            Модели не найдены.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="hint" style={{ marginTop: 8 }}>
+                  “—” заполняется по мере проверок. Также можно просто выбрать модель
+                  и нажать “Сохранить выбор” — мы один раз проверим и сохраним.
+                </div>
+              </div>
+            </PanelShell>
+          );
+        }
+
+        if (id === "journal") {
+          return (
+            <PanelShell key={id} title="Журнал" onClose={() => closePanel(id)}>
+              <div className="sidebar__section">
+                <div className="sidebar__section-title">Execution Journal</div>
+
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Клик по событию → центрируем граф (пока условно на{" "}
+                  <span className="mono">agent/tools</span>).
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 14,
+                    background: "rgba(0,0,0,0.10)",
+                    maxHeight: 520,
+                    overflow: "auto",
+                    padding: 8,
+                    display: "grid",
+                    gap: 6,
+                  }}
+                >
+                  {journalEvents.length === 0 ? (
+                    <div className="hint">Пока пусто — запусти Run.</div>
+                  ) : (
+                    journalEvents.map((ev) => {
+                      const active =
+                        ev.focusNodeId &&
+                        String(ev.focusNodeId) === String(focusNodeId);
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() =>
+                            ev.focusNodeId && setFocusNodeId(String(ev.focusNodeId))
+                          }
+                          style={{
+                            textAlign: "left",
+                            justifyContent: "flex-start",
+                            gap: 8,
+                            background: active
+                              ? "rgba(185,200,230,0.10)"
+                              : undefined,
+                            borderColor: active
+                              ? "rgba(185,200,230,0.28)"
+                              : undefined,
+                          }}
+                        >
+                          <span className="mono" style={{ opacity: 0.85 }}>
+                            {ev.kind === "tool_call" ? "tool" : ev.role}
+                          </span>
+                          <span className="mono" style={{ opacity: 0.95 }}>
+                            {ev.label}
+                          </span>
+                          <span
+                            className="mono"
+                            style={{ marginLeft: "auto", opacity: 0.65 }}
+                          >
+                            {ev.focusNodeId || "—"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
             </PanelShell>
           );
         }
 
         if (id === "tools") {
           return (
-            <PanelShell
-              key={id}
-              title="Инструменты"
-              onClose={() => closePanel(id)}
-            >
-              <div className="sidebar__section">
-                <div className="sidebar__section-title">tool_calls (probe)</div>
-
-                <div className="hint">
-                  Проверяет, делает ли модель{" "}
-                  <span className="mono">реальные tool_calls</span>.
-                </div>
-
-                <label className="label">
-                  <span className="label__text">
-                    max (сколько моделей проверять)
-                  </span>
-                  <input
-                    className="select"
-                    type="number"
-                    min="1"
-                    max="24"
-                    value={probeMaxModels}
-                    onChange={(e) => setProbeMaxModels(e.target.value)}
-                  />
-                </label>
-
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={() => probeAll(false)}
-                  disabled={probeLoading}
-                >
-                  {probeLoading ? "Проверяю…" : "Проверить (кэш)"}
-                </button>
-
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={() => probeAll(true)}
-                  disabled={probeLoading}
-                >
-                  {probeLoading ? "Проверяю…" : "Проверить (force)"}
-                </button>
-
-                {probeInfo ? <div className="ok">{probeInfo}</div> : null}
-                {probeError ? <div className="error">{probeError}</div> : null}
-
-                {probeRows.length === 0 ? (
-                  <div className="placeholder">
-                    Нажми “Проверить” — появится таблица.
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 10 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr>
-                          <th
-                            style={{
-                              textAlign: "left",
-                              padding: "6px 4px",
-                              borderBottom:
-                                "1px solid rgba(255,255,255,0.12)",
-                            }}
-                          >
-                            Модель
-                          </th>
-                          <th
-                            style={{
-                              textAlign: "center",
-                              padding: "6px 4px",
-                              borderBottom:
-                                "1px solid rgba(255,255,255,0.12)",
-                              width: 70,
-                            }}
-                          >
-                            tool_calls
-                          </th>
-                          <th
-                            style={{
-                              textAlign: "center",
-                              padding: "6px 4px",
-                              borderBottom:
-                                "1px solid rgba(255,255,255,0.12)",
-                              width: 70,
-                            }}
-                          >
-                            кэш
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {probeRows.map((r) => (
-                          <tr key={r.model}>
-                            <td
-                              style={{
-                                padding: "6px 4px",
-                                borderBottom:
-                                  "1px solid rgba(255,255,255,0.08)",
-                              }}
-                            >
-                              <span className="mono">{r.model}</span>
-                              {r.error ? (
-                                <div className="hint" style={{ marginTop: 4 }}>
-                                  err: <span className="mono">{r.error}</span>
-                                </div>
-                              ) : null}
-                            </td>
-                            <td
-                              style={{
-                                textAlign: "center",
-                                padding: "6px 4px",
-                                borderBottom:
-                                  "1px solid rgba(255,255,255,0.08)",
-                              }}
-                            >
-                              {r.ok ? "✅" : "❌"}
-                            </td>
-                            <td
-                              style={{
-                                textAlign: "center",
-                                padding: "6px 4px",
-                                borderBottom:
-                                  "1px solid rgba(255,255,255,0.08)",
-                              }}
-                            >
-                              {r.cached ? "✓" : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
+            <PanelShell key={id} title="Инструменты" onClose={() => closePanel(id)}>
               <div className="sidebar__section">
                 <div className="sidebar__section-title">План</div>
-                <div className="hint">
-                  Здесь позже будут реальные tools (fs/shell/web). Сейчас —
-                  минимальный probe.
-                </div>
+                <div className="hint">Здесь позже будут реальные tools (fs/shell/web).</div>
               </div>
             </PanelShell>
           );
@@ -1045,7 +1357,17 @@ export default function App() {
               <TabButton
                 key={t.id}
                 active={tab === t.id}
-                onClick={() => setTab(t.id)}
+                onClick={() => {
+                  if (t.id === "run") {
+                    if (tab === "run") {
+                      setSplitMode((m) => (m === "split" ? "run" : "split"));
+                    } else {
+                      setTab("run");
+                    }
+                    return;
+                  }
+                  setTab(t.id);
+                }}
               >
                 {t.title}
               </TabButton>
@@ -1061,286 +1383,226 @@ export default function App() {
 
         <div
           className="content"
-          style={tab === "graph" ? { paddingRight: 0, paddingBottom: 0 } : undefined}
+          style={
+            tab === "graph"
+              ? { paddingRight: 0, paddingBottom: 0 }
+              : tab === "run"
+              ? { padding: "10px 0 10px 12px" }
+              : undefined
+          }
+          data-tab={tab}
         >
           {tab === "run" && (
             <SplitView
               mode={splitMode}
               onModeChange={setSplitMode}
               storageKey="splitview:left_pct"
-              left={(
-            <div className="card">
-              <h2>Run</h2>
-              <p className="muted">
-                Ввод → запуск → поток шагов (messages) из{" "}
-                <span className="mono">/runs/stream</span>.
-              </p>
+              left={
+                <div className="card">
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      marginBottom: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <IconBtn
+                        label="Запуск"
+                        onClick={runStream}
+                        disabled={runRunning || !runInput.trim()}
+                      >
+                        ▶
+                      </IconBtn>
+                      <IconBtn label="Остановить" onClick={stopRun} disabled={!runRunning}>
+                        ■
+                      </IconBtn>
+                      <IconBtn label="Очистить" onClick={clearRun} disabled={runRunning}>
+                        ⟲
+                      </IconBtn>
+                    </div>
 
-              <label className="label">
-                <span className="label__text">Ввод</span>
-                <textarea
-                  className="select"
-                  style={{ height: 120, paddingTop: 10, paddingBottom: 10 }}
-                  value={runInput}
-                  onChange={(e) => setRunInput(e.target.value)}
-                  placeholder="Введите запрос…"
-                />
-              </label>
+                    <div
+                      className="mono"
+                      style={{ opacity: 0.85, fontSize: 12, lineHeight: 1.2 }}
+                    >
+                      run_id: {runRunId || "-"} · messages: {runSteps.length}
+                    </div>
+                  </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  marginTop: 10,
-                }}
-              >
-                <button
-                  className="primary-btn"
-                  type="button"
-                  onClick={runStream}
-                  disabled={runRunning || !runInput.trim()}
-                >
-                  {runRunning ? "Выполняю…" : "Запуск (stream)"}
-                </button>
+                  <textarea
+                    className="select"
+                    style={{ height: 110, paddingTop: 10, paddingBottom: 10 }}
+                    value={runInput}
+                    onChange={(e) => setRunInput(e.target.value)}
+                    placeholder="Введите запрос…"
+                  />
 
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={stopRun}
-                  disabled={!runRunning}
-                >
-                  Остановить
-                </button>
+                  {runStreamError ? <div className="error">{runStreamError}</div> : null}
+                  {apiError ? <div className="error">{apiError}</div> : null}
 
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={clearRun}
-                  disabled={runRunning}
-                >
-                  Очистить
-                </button>
-              </div>
-
-              <div className="hint" style={{ marginTop: 10 }}>
-                run_id: <span className="mono">{runRunId || "-"}</span>
-                <br />
-                messages: <span className="mono">{runSteps.length}</span>
-              </div>
-
-              {/* Execution Journal (MVP): временно из messages/tool_calls. */}
-              <div style={{ marginTop: 10 }}>
-                <div
-                  className="sidebar__section-title"
-                  style={{ marginBottom: 6, opacity: 0.9 }}
-                >
-                  Execution Journal (MVP)
-                </div>
-
-                <div className="hint" style={{ marginBottom: 8 }}>
-                  Клик по событию → центрируем граф (пока условно на <span className="mono">agent/tools</span>).
-                </div>
-
-                <div
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 14,
-                    background: "rgba(0,0,0,0.10)",
-                    maxHeight: 220,
-                    overflow: "auto",
-                    padding: 8,
-                    display: "grid",
-                    gap: 6,
-                  }}
-                >
-                  {journalEvents.length === 0 ? (
-                    <div className="hint">Пока пусто — запусти Run.</div>
+                  {runSteps.length === 0 ? (
+                    <div className="placeholder">
+                      Нажми ▶ — появятся шаги model/tools и результаты tools.
+                    </div>
                   ) : (
-                    journalEvents.map((ev) => {
-                      const active = ev.focusNodeId && String(ev.focusNodeId) === String(focusNodeId);
-                      return (
-                        <button
-                          key={ev.id}
-                          type="button"
-                          className="secondary-btn"
-                          onClick={() => ev.focusNodeId && setFocusNodeId(String(ev.focusNodeId))}
-                          title={ev.focusNodeId ? `focus: ${ev.focusNodeId}` : ""}
-                          style={{
-                            textAlign: "left",
-                            justifyContent: "flex-start",
-                            gap: 8,
-                            background: active ? "rgba(185,200,230,0.10)" : undefined,
-                            borderColor: active ? "rgba(185,200,230,0.28)" : undefined,
-                          }}
-                        >
-                          <span className="mono" style={{ opacity: 0.85 }}>
-                            {ev.kind === "tool_call" ? "tool" : ev.role}
-                          </span>
-                          <span className="mono" style={{ opacity: 0.95 }}>
-                            {ev.label}
-                          </span>
-                          <span className="mono" style={{ marginLeft: "auto", opacity: 0.65 }}>
-                            {ev.focusNodeId || "—"}
-                          </span>
-                        </button>
-                      );
-                    })
+                    <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                      {runSteps.map((m, idx) => {
+                        const role = msgRoleLabel(m);
+                        const tone =
+                          role === "model"
+                            ? "good"
+                            : role === "tool"
+                            ? "neutral"
+                            : role === "user"
+                            ? "neutral"
+                            : "neutral";
+
+                        const content = m?.content ?? "";
+                        const contentStr =
+                          typeof content === "string" ? content : prettyJson(content);
+                        const maybeJson =
+                          typeof content === "string"
+                            ? safeJsonParse(content)
+                            : { ok: false };
+
+                        const toolCalls = Array.isArray(m?.tool_calls) ? m.tool_calls : [];
+                        const invalidToolCalls = Array.isArray(m?.invalid_tool_calls)
+                          ? m.invalid_tool_calls
+                          : [];
+
+                        return (
+                          <div
+                            key={m?.id || `${idx}`}
+                            style={{
+                              border: "1px solid rgba(255,255,255,0.12)",
+                              borderRadius: 14,
+                              padding: 10,
+                              background: "rgba(255,255,255,0.03)",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 10,
+                                alignItems: "center",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <Badge tone={tone}>{role}</Badge>
+                              <span className="mono" style={{ opacity: 0.85 }}>
+                                #{idx + 1}
+                              </span>
+                              {m?.name ? (
+                                <span className="mono" style={{ opacity: 0.85 }}>
+                                  name={m.name}
+                                </span>
+                              ) : null}
+                              {m?.response_metadata?.model ? (
+                                <span className="mono" style={{ opacity: 0.85 }}>
+                                  model={m.response_metadata.model}
+                                </span>
+                              ) : null}
+                              {toolCalls.length ? (
+                                <span className="mono" style={{ opacity: 0.85 }}>
+                                  tool_calls={toolCalls.length}
+                                </span>
+                              ) : null}
+                              {invalidToolCalls.length ? (
+                                <span className="mono" style={{ opacity: 0.85 }}>
+                                  invalid_tool_calls={invalidToolCalls.length}
+                                </span>
+                              ) : null}
+                            </div>
+
+                            {contentStr ? (
+                              <pre
+                                className="mono"
+                                style={{
+                                  marginTop: 8,
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  padding: 10,
+                                  borderRadius: 12,
+                                  background: "rgba(0,0,0,0.18)",
+                                  border: "1px solid rgba(255,255,255,0.10)",
+                                  maxHeight: 260,
+                                  overflow: "auto",
+                                }}
+                              >
+                                {contentStr}
+                              </pre>
+                            ) : null}
+
+                            {toolCalls.length ? (
+                              <pre
+                                className="mono"
+                                style={{
+                                  marginTop: 8,
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  padding: 10,
+                                  borderRadius: 12,
+                                  background: "rgba(0,0,0,0.14)",
+                                  border: "1px solid rgba(255,255,255,0.10)",
+                                  maxHeight: 240,
+                                  overflow: "auto",
+                                }}
+                              >
+                                {prettyJson({ tool_calls: toolCalls })}
+                              </pre>
+                            ) : null}
+
+                            {invalidToolCalls.length ? (
+                              <pre
+                                className="mono"
+                                style={{
+                                  marginTop: 8,
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-word",
+                                  padding: 10,
+                                  borderRadius: 12,
+                                  background: "rgba(255,90,90,0.08)",
+                                  border: "1px solid rgba(255,90,90,0.18)",
+                                  maxHeight: 240,
+                                  overflow: "auto",
+                                }}
+                              >
+                                {prettyJson({ invalid_tool_calls: invalidToolCalls })}
+                              </pre>
+                            ) : null}
+
+                            {maybeJson.ok ? (
+                              <div className="hint" style={{ marginTop: 6 }}>
+                                content выглядит как JSON (возможно псевдо-toolcall, если модель не поддерживает tool_calls).
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-
-              {runStreamError ? <div className="error">{runStreamError}</div> : null}
-              {apiError ? <div className="error">{apiError}</div> : null}
-
-              {runSteps.length === 0 ? (
-                <div className="placeholder">
-                  Нажми “Запуск (stream)” — появятся шаги model/tools и результаты tools.
-                </div>
-              ) : (
-                <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-                  {runSteps.map((m, idx) => {
-                    const role = msgRoleLabel(m);
-                    const tone =
-                      role === "model"
-                        ? "good"
-                        : role === "tool"
-                        ? "neutral"
-                        : role === "user"
-                        ? "neutral"
-                        : "neutral";
-
-                    const content = m?.content ?? "";
-                    const contentStr =
-                      typeof content === "string" ? content : prettyJson(content);
-                    const maybeJson =
-                      typeof content === "string"
-                        ? safeJsonParse(content)
-                        : { ok: false };
-
-                    const toolCalls = Array.isArray(m?.tool_calls) ? m.tool_calls : [];
-                    const invalidToolCalls = Array.isArray(m?.invalid_tool_calls)
-                      ? m.invalid_tool_calls
-                      : [];
-
-                    return (
-                      <div
-                        key={m?.id || `${idx}`}
-                        style={{
-                          border: "1px solid rgba(255,255,255,0.12)",
-                          borderRadius: 14,
-                          padding: 10,
-                          background: "rgba(255,255,255,0.03)",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            alignItems: "center",
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <Badge tone={tone}>{role}</Badge>
-                          <span className="mono" style={{ opacity: 0.85 }}>
-                            #{idx + 1}
-                          </span>
-                          {m?.name ? (
-                            <span className="mono" style={{ opacity: 0.85 }}>
-                              name={m.name}
-                            </span>
-                          ) : null}
-                          {m?.response_metadata?.model ? (
-                            <span className="mono" style={{ opacity: 0.85 }}>
-                              model={m.response_metadata.model}
-                            </span>
-                          ) : null}
-                          {toolCalls.length ? (
-                            <span className="mono" style={{ opacity: 0.85 }}>
-                              tool_calls={toolCalls.length}
-                            </span>
-                          ) : null}
-                          {invalidToolCalls.length ? (
-                            <span className="mono" style={{ opacity: 0.85 }}>
-                              invalid_tool_calls={invalidToolCalls.length}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {contentStr ? (
-                          <pre
-                            className="mono"
-                            style={{
-                              marginTop: 8,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              padding: 10,
-                              borderRadius: 12,
-                              background: "rgba(0,0,0,0.18)",
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              maxHeight: 260,
-                              overflow: "auto",
-                            }}
-                          >
-                            {contentStr}
-                          </pre>
-                        ) : null}
-
-                        {toolCalls.length ? (
-                          <pre
-                            className="mono"
-                            style={{
-                              marginTop: 8,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              padding: 10,
-                              borderRadius: 12,
-                              background: "rgba(0,0,0,0.14)",
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              maxHeight: 240,
-                              overflow: "auto",
-                            }}
-                          >
-                            {prettyJson({ tool_calls: toolCalls })}
-                          </pre>
-                        ) : null}
-
-                        {invalidToolCalls.length ? (
-                          <pre
-                            className="mono"
-                            style={{
-                              marginTop: 8,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                              padding: 10,
-                              borderRadius: 12,
-                              background: "rgba(255,90,90,0.08)",
-                              border: "1px solid rgba(255,90,90,0.18)",
-                              maxHeight: 240,
-                              overflow: "auto",
-                            }}
-                          >
-                            {prettyJson({ invalid_tool_calls: invalidToolCalls })}
-                          </pre>
-                        ) : null}
-
-                        {maybeJson.ok ? (
-                          <div className="hint" style={{ marginTop: 6 }}>
-                            content выглядит как JSON (возможно псевдо-toolcall, если модель не поддерживает tool_calls).
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-              )}
-              right={<GraphView assistantId={assistantId} focusNodeId={focusNodeId} onNodeSelected={setFocusNodeId} />}
+              }
+              right={
+                <GraphView
+                  assistantId={assistantId}
+                  focusNodeId={focusNodeId}
+                  onNodeSelected={setFocusNodeId}
+                />
+              }
             />
           )}
 
-          {tab === "graph" && <GraphView assistantId={assistantId} focusNodeId={focusNodeId} onNodeSelected={setFocusNodeId} />}
+          {tab === "graph" && (
+            <GraphView
+              assistantId={assistantId}
+              focusNodeId={focusNodeId}
+              onNodeSelected={setFocusNodeId}
+            />
+          )}
 
           {tab === "history" && (
             <div className="card">

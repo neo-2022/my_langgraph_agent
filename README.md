@@ -1,8 +1,6 @@
 # my_langgraph_agent
 
-Локальный LangGraph-агент (ReAct) с Ollama + локальные панели управления:
-- Settings UI (FastAPI)
-- React UI (Vite) — “мини-Studio”
+Локальный LangGraph-агент (ReAct) с Ollama + локальный UI “мини-Studio” (React/Vite) и единая точка входа (UI Proxy).
 
 Проект устроен так, чтобы:
 - локальная часть (Ollama) жила в одном виртуальном окружении без “облачных” зависимостей
@@ -20,9 +18,8 @@
 
 Скрипт поднимет (или оставит запущенными) сервисы в tmux:
 - LangGraph API
-- Settings UI (настройки/модели)
-- React UI (основной UI)
 - UI Proxy (единая точка входа для React UI)
+- React UI (основной UI)
 
 ---
 
@@ -30,13 +27,12 @@
 
 - LangGraph API: http://127.0.0.1:2024
 - Документация API: http://127.0.0.1:2024/docs
-- Settings UI (FastAPI): http://127.0.0.1:8088
-- React UI (Vite): http://127.0.0.1:5174
 - UI Proxy (проксирует `/api/*` и `/ui/*`): http://127.0.0.1:8090
+- React UI (Vite): http://127.0.0.1:5174
 
 Важно:
 - React UI запросы к LangGraph делает через `/api/...` (через UI Proxy)
-- модели/настройки идут через `/ui/...` (например `/ui/models`)
+- модели/настройки идут через `/ui/...` (например `/ui/models`) — тоже через UI Proxy
 
 ---
 
@@ -46,7 +42,6 @@
 
 ~~~bash
 tmux attach -t langgraph
-tmux attach -t settings_ui
 tmux attach -t ui_proxy
 tmux attach -t ui
 ~~~
@@ -66,18 +61,11 @@ tmux ls
 
 ---
 
-## Как выбрать модель Ollama
+## Как выбрать модель Ollama (через React UI)
 
-### Вариант 1 (рекомендуется): через Settings UI
-1) Открой Settings UI: http://127.0.0.1:8088
-2) Выбери модель → Сохранить
-3) Нажми “Перезапустить LangGraph”
-4) Обнови React UI
-
-### Вариант 2: через React UI
-1) Открой React UI: http://127.0.0.1:5174
-2) Панель “Локальные модели (Ollama)” → выбери модель → “Сохранить”
-3) (Если нужно) “Перезапустить LangGraph”
+1) Открой React UI: http://127.0.0.1:5174  
+2) Панель “Локальные модели (Ollama)” → выбери модель → “Сохранить”  
+3) (Если нужно) “Перезапустить LangGraph”  
 4) Обнови страницу
 
 ---

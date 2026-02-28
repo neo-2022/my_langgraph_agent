@@ -219,12 +219,30 @@ a:hover { text-decoration: underline; }
   align-items: center;
   flex-wrap: wrap;
 }
-
 .content {
   padding: 10px 12px;
   overflow: auto;
   flex: 1;
   min-height: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+
+  min-width: 0;
+}
+
+/* Force Run tab to reach the full right edge (no right padding) */
+.content[data-tab="run"]{
+  padding: 10px 0 10px 12px !important; /* top right bottom left */
+}
+
+
+.content > .sv{
+  width:100%;
+  min-width:0;
+  flex:1;
+  align-self:stretch;
 }
 
 /* Cards */
@@ -531,16 +549,16 @@ a:hover { text-decoration: underline; }
 /* GraphBar layout */
 .graphbar {
   display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
+  align-items: center;
+gap: 12px;
+  flex-wrap: nowrap;
 }
 .graphbar__spacer { flex: 1; }
 .graphbar__controls {
   display: flex;
   gap: 12px;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 /* Brand title (LangGraph): золото */
@@ -719,9 +737,9 @@ a:hover { text-decoration: underline; }
   content: attr(data-tip);
   position: absolute;
   left: 115%;
-  bottom: 50%;
-  transform: translateY(50%);
-  white-space: nowrap;
+  top: 50%;
+transform: translateY(-50%);
+white-space: nowrap;
 
   padding: 6px 8px;
   border-radius: 10px;
@@ -743,15 +761,14 @@ a:hover { text-decoration: underline; }
   content: "";
   position: absolute;
   left: 104%;
-  bottom: 50%;
-  width: 10px;
+  top: 50%;
+width: 10px;
   height: 10px;
   background: rgba(0, 0, 0, 0.72);
   border-left: 1px solid rgba(255, 255, 255, 0.14);
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  transform: translateY(50%) rotate(45deg);
-
-  opacity: 0;
+  transform: translateY(-50%) rotate(45deg);
+opacity: 0;
   pointer-events: none;
 
   transition: opacity 120ms ease;
@@ -813,6 +830,11 @@ a:hover { text-decoration: underline; }
   flex-direction:column;
   height:100%;
   min-height:0;
+
+  width:100%;
+  min-width:0;
+  flex:1;
+  align-self:stretch;
 }
 
 .sv__toolbar{
@@ -859,10 +881,19 @@ a:hover { text-decoration: underline; }
   background: rgba(185,200,230,0.10);
   border-color: rgba(185,200,230,0.30);
 }
-
 .sv__single{
   flex:1;
   min-height:0;
+  width:100%;
+  min-width:0;
+
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+}
+.sv__single > *{
+  width:100%;
+  min-width:0;
 }
 
 .sv__split{
@@ -931,3 +962,433 @@ a:hover { text-decoration: underline; }
   border:1px solid var(--border);
   background: rgba(0,0,0,0.10);
 }
+
+
+
+/* =========================
+   Tooltips (design-consistent)
+   Use: data-tip="..."
+   ========================= */
+[data-tip]{
+  position: relative;
+}
+
+[data-tip]:hover{
+  z-index: 1000;
+}
+
+
+
+[data-tip=""]::after,
+[data-tip=""]::before{
+  display:none;
+}
+
+button:disabled[data-tip]::after,
+button:disabled[data-tip]::before{
+  display:none;
+}
+[data-tip]::after{
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+
+padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(12,14,18,0.92);
+  color: rgba(255,255,255,0.90);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  box-shadow: 0 16px 34px rgba(0,0,0,0.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: 140ms ease;
+  z-index: 9999;
+}
+
+[data-tip]::before{
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  width: 10px;
+  height: 10px;
+  background: rgba(12,14,18,0.92);
+  border-left: 1px solid rgba(255,255,255,0.14);
+  border-top: 1px solid rgba(255,255,255,0.14);
+  transform: translateX(-50%) rotate(45deg);
+opacity: 0;
+  visibility: hidden;
+  transition: 140ms ease;
+  z-index: 9998;
+}
+
+[data-tip]:hover::after,
+[data-tip]:hover::before{
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-width: 980px){
+  [data-tip]::after,
+  [data-tip]::before{
+    display:none;
+  }
+}
+
+
+
+/* =========================
+   Run header toolbar
+   ========================= */
+.runhdr{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom: 4px;
+}
+.runhdr__subtitle{
+  font-size: 12px;
+  opacity: 0.65;
+  margin-left: 6px;
+}
+.runhdr__spacer{ flex: 1; }
+.runhdr__meta{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  opacity: 0.86;
+}
+.runhdr__dot{ opacity: 0.55; }
+.runhdr__actions{
+  display:flex;
+  align-items:center;
+  gap: 6px;
+}
+.runhdr__icon{
+padding: 0 !important;
+  line-height: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  display:grid;
+  place-items:center;
+  font-size: 14px;
+  padding: 0;
+  line-height: 0;
+}
+
+
+.fold{
+  margin-top: 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  background: rgba(0,0,0,0.08);
+  padding: 8px;
+}
+.fold__sum{
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  color: rgba(255,255,255,0.84);
+}
+.fold__sum::-webkit-details-marker{ display:none; }
+
+
+.runhdr__icon svg{ display:block; }
+
+/* Run header icon tooltips: show below to avoid overlap with top bars */
+.runhdr__icon[data-tip]::after{
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+.runhdr__icon[data-tip]::before{
+  display: none;
+}
+
+/* Run header tooltips: always show below, no arrow */
+.runhdr [data-tip]::after{
+  top: calc(100% + 10px);
+  bottom: auto;
+}
+.runhdr [data-tip]::before{
+  display: none;
+}
+
+
+/* Run header: Run↔Split toggle */
+.runhdr__toggle{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.86);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: 140ms ease;
+}
+.runhdr__toggle:hover{
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.22);
+}
+.runhdr__toggle:active{ transform: translateY(1px); }
+
+
+/* ReactFlow attribution (bottom-right link) — убрать */
+.react-flow__attribution { display: none !important; }
+
+
+
+/* ReactFlow Controls tooltip override (must be AFTER global [data-tip]) */
+.react-flow__controls button[data-tip]::after{
+  content: attr(data-tip);
+  position: absolute;
+  left: 115%;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.25px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  transition-delay: 0.15s;
+  z-index: 9999;
+}
+
+.react-flow__controls button[data-tip]::before{
+  content: "";
+  position: absolute;
+  left: 104%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  background: rgba(0, 0, 0, 0.72);
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  transform: translateY(-50%) rotate(45deg);
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+  transition-delay: 0.15s;
+  z-index: 9998;
+}
+
+.react-flow__controls button[data-tip]:hover::after,
+.react-flow__controls button[data-tip]:focus-visible::after{
+  opacity: 1;
+  transform: translateY(-50%) translateX(2px);
+  transition-delay: 0s;
+}
+.react-flow__controls button[data-tip]:hover::before,
+.react-flow__controls button[data-tip]:focus-visible::before{
+  opacity: 1;
+  transition-delay: 0s;
+}
+
+/* Если кнопка disabled — не показываем */
+.react-flow__controls button:disabled::after,
+.react-flow__controls button:disabled::before{
+  display: none !important;
+}
+
+
+/* GraphBar: unify controls sizes (select + Refresh) */
+.graphbar__controls .fselect{
+  height: 42px;
+  font-size: 13px;
+  font-weight: 520;
+  letter-spacing: 0.25px;
+}
+
+.graphbar__controls .secondary-btn{
+  height: 42px;
+  padding: 0 12px;          /* как у fselect */
+  font-size: 13px;          /* как у fselect */
+  font-weight: 520;         /* как у fselect */
+  letter-spacing: 0.25px;   /* как у fselect */
+  line-height: 42px;        /* чтобы текст сидел ровно по центру */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* GraphBar: Refresh should look identical to fselect (final override) */
+.graphbar__controls .secondary-btn{
+  font-weight: 520 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.25px !important;
+
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  background: rgba(0,0,0,0.20) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 22px rgba(0,0,0,0.18) !important;
+
+  border-radius: 12px !important; /* как у fselect */
+}
+
+.graphbar__controls .secondary-btn:hover{
+  background: rgba(0,0,0,0.26) !important;
+  border-color: rgba(255,255,255,0.16) !important;
+}
+
+
+/* GraphBar: hard-align LR select + Refresh (same geometry) */
+.graphbar__controls .fselect,
+.graphbar__controls .secondary-btn{
+  height: 42px !important;
+  border-radius: 18px !important; /* сделаем как на скрине “пилюли” одинаковые */
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  background: rgba(0,0,0,0.20) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 22px rgba(0,0,0,0.18) !important;
+
+  font-size: 13px !important;
+  font-weight: 520 !important;
+  letter-spacing: 0.25px !important;
+}
+
+.graphbar__controls .secondary-btn{
+  padding: 0 18px !important; /* визуально как у селекта */
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+
+/* одинаковая ширина — чтобы смотрелось “как пара” */
+.graphbar__controls .field{ width: 420px !important; }
+.graphbar__controls .secondary-btn{ width: 420px !important; }
+
+/* hover одинаковый */
+.graphbar__controls .fselect:hover,
+.graphbar__controls .secondary-btn:hover{
+  background: rgba(0,0,0,0.26) !important;
+  border-color: rgba(255,255,255,0.16) !important;
+}
+
+
+/* GraphBar: cancel full-width hacks; left = content width, right = measured width */
+.graphbar__controls .field{ width: auto !important; }
+.graphbar__controls .secondary-btn{ width: auto !important; }
+
+/* RailButton: tiny vertical padding tweak */
+.rail-btn{
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+}
+
+
+/* Drawer titles: make them look like rail buttons (visual pill) */
+.drawer__title{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 6px 10px;                 /* компактно как rail */
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+
+  color: rgba(255,255,255,0.82);
+  font-size: 12px;
+  font-weight: 520;
+  letter-spacing: 0.30px;
+
+  box-shadow: 0 8px 22px rgba(0,0,0,0.22);
+}
+
+/* Align header spacing so the pill sits nicely */
+.drawer__header{
+  gap: 10px;
+}
+
+
+/* Rail buttons: make them less tall (narrower height) */
+.rail-btn{
+  min-height: 72px !important;
+  padding: 4px 6px !important;
+}
+
+
+/* Rail buttons: reduce inner top/bottom air around vertical text */
+.rail-btn{
+  min-height: 58px !important;
+  padding: 0 !important;
+}
+
+.rail-btn__text{
+  font-size: 11px !important;
+  line-height: 1 !important;
+  padding: 0 !important;
+}
+
+/* Rail buttons: match tabs (Run/Graph/History/State): lower height, normal readable text */
+.rail-btn{
+  min-height: 52px !important;
+  padding: 0 !important;              /* убираем лишний воздух сверху/снизу */
+}
+
+.rail-btn__text{
+  font-size: 12px !important;         /* как табы */
+  font-weight: 520 !important;
+  letter-spacing: 0.25px !important;
+  line-height: 1.15 !important;
+}
+
+
+/* =========================================
+   Graph: nodes text MUCH bigger + less vertical padding
+   ========================================= */
+
+/* Default node body */
+.react-flow__node-default{
+  padding: 4px 12px !important;   /* почти до верха/низа */
+  font-size: 28px !important;     /* ~в 2 раза крупнее */
+  line-height: 1.05 !important;
+}
+
+/* Fallbacks for various internals */
+.react-flow__node-default .react-flow__node-default__label,
+.react-flow__node-default .react-flow__node-default__content,
+.react-flow__node-default .react-flow__node-default__body,
+.react-flow__node-default .react-flow__node-default__text,
+.react-flow__node-default .react-flow__node-default__title{
+  font-size: 28px !important;
+  line-height: 1.05 !important;
+}
+
+/* Edge labels (text on lines) bigger */
+.react-flow__edge-text{
+  font-size: 22px !important;
+  font-weight: 900 !important;
+}
+
+/* Edge label background a bit larger to match bigger text */
+.react-flow__edge-textbg{
+  fill: rgba(0, 0, 0, 0.52) !important;
+}
+

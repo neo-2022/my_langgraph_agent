@@ -41,30 +41,29 @@
 ### 1.3 Tools (управление/диагностика)
 - list/set модели Ollama
 - probe tool_calls для модели/массово
+- restart LangGraph через tmux (для применения настроек)
 
-### 1.4 Settings UI (FastAPI)
-- UI на `http://127.0.0.1:8088`
-- выбор модели + probe tool_calls + restart LangGraph
-
-### 1.5 React UI (Vite)
+### 1.4 React UI (Vite)
 - UI на `http://127.0.0.1:5174`
 - базовый layout: rail + drawers + main tabs
 - вкладка Run: stream, показ messages, tool_calls/tool results
 - вкладка Graph: React Flow + Dagre layout + Controls/MiniMap
+- SplitView (в процессе/частично)
 
-### 1.6 Proxy
+### 1.5 UI Proxy
 - единая точка входа: `http://127.0.0.1:8090`
 - `/api/*` → LangGraph API `127.0.0.1:2024`
-- `/ui/*` → Settings UI endpoints
+- `/ui/*` → endpoints управления локальными моделями/перезапуском (всё в ui_proxy)
 
 ---
 
 ## 2) Где мы сейчас (текущее состояние)
 
 У нас есть:
-- стабильный запуск всех сервисов
+- стабильный запуск сервисов
 - Run работает (stream)
 - Graph показывает структуру графа
+- UI Proxy обслуживает и `/api/*`, и `/ui/*` (без отдельного Settings UI)
 
 **Чего критично не хватает для отладки:**
 - одновременно видеть Run и Graph (Split View)

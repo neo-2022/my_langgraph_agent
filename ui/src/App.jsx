@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import "./App.css";
 import "reactflow/dist/style.css";
 import GraphView from "./GraphView.jsx";
+import SplitView from "./SplitView.jsx";
 
 function TabButton({ active, onClick, children }) {
   return (
@@ -272,6 +273,19 @@ function prettyJson(obj) {
 
 export default function App() {
   const [tab, setTab] = useState("run");
+  const [splitMode, setSplitMode] = useState(() => {
+    try {
+      return localStorage.getItem("splitview:mode") || "split";
+    } catch {
+      return "split";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("splitview:mode", splitMode);
+    } catch {}
+  }, [splitMode]);
   const [openPanels, setOpenPanels] = useState(["general"]);
 
   const [apiStatus, setApiStatus] = useState("не проверял");
@@ -1008,6 +1022,11 @@ export default function App() {
           style={tab === "graph" ? { paddingRight: 0, paddingBottom: 0 } : undefined}
         >
           {tab === "run" && (
+            <SplitView
+              mode={splitMode}
+              onModeChange={setSplitMode}
+              storageKey="splitview:left_pct"
+              left={(
             <div className="card">
               <h2>Run</h2>
               <p className="muted">
@@ -1213,6 +1232,9 @@ export default function App() {
                 </div>
               )}
             </div>
+              )}
+              right={<GraphView assistantId={assistantId} />}
+            />
           )}
 
           {tab === "graph" && <GraphView assistantId={assistantId} />}

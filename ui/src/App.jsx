@@ -286,6 +286,7 @@ export default function App() {
       localStorage.setItem("splitview:mode", splitMode);
     } catch {}
   }, [splitMode]);
+  const [focusNodeId, setFocusNodeId] = useState("");
   const [openPanels, setOpenPanels] = useState(["general"]);
 
   const [apiStatus, setApiStatus] = useState("не проверял");
@@ -320,6 +321,47 @@ export default function App() {
   const [runStreamError, setRunStreamError] = useState("");
   const abortRef = useRef(null);
   const seenCountRef = useRef(0);
+
+  // Execution Journal (MVP): временно строим из messages/tool_calls.
+  // Синхронизация: клик по событию -> центрируем граф на условной ноде (agent/tools).
+  const journalEvents = useMemo(() => {
+    const infer = (role) => {
+      if (role === "tool") return "tools";
+      if (role === "model") return "agent";
+      return "";
+    };
+
+    const out = [];
+    for (let i = 0; i < (runSteps?.length || 0); i++) {
+      const m = runSteps[i] || {};
+      const role = msgRoleLabel(m);
+      const focus = infer(role);
+
+      out.push({
+        id: `msg-${i}`,
+        kind: "message",
+        role,
+        label: `${i + 1}. ${role}`,
+        focusNodeId: focus,
+      });
+
+      const toolCalls = Array.isArray(m?.tool_calls) ? m.tool_calls : [];
+      if (toolCalls.length) {
+        for (let j = 0; j < toolCalls.length; j++) {
+          const tc = toolCalls[j] || {};
+          const name = tc?.name || tc?.function?.name || "tool";
+          out.push({
+            id: `tc-${i}-${j}`,
+            kind: "tool_call",
+            role: "tool_call",
+            label: `↳ tool_call: ${name}`,
+            focusNodeId: "tools",
+          });
+        }
+      }
+    }
+    return out;
+  }, [runSteps]);
 
   const tabs = useMemo(
     () => [
@@ -1087,6 +1129,67 @@ export default function App() {
                 messages: <span className="mono">{runSteps.length}</span>
               </div>
 
+              {/* Execution Journal (MVP): временно из messages/tool_calls. */}
+              <div style={{ marginTop: 10 }}>
+                <div
+                  className="sidebar__section-title"
+                  style={{ marginBottom: 6, opacity: 0.9 }}
+                >
+                  Execution Journal (MVP)
+                </div>
+
+                <div className="hint" style={{ marginBottom: 8 }}>
+                  Клик по событию → центрируем граф (пока условно на <span className="mono">agent/tools</span>).
+                </div>
+
+                <div
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 14,
+                    background: "rgba(0,0,0,0.10)",
+                    maxHeight: 220,
+                    overflow: "auto",
+                    padding: 8,
+                    display: "grid",
+                    gap: 6,
+                  }}
+                >
+                  {journalEvents.length === 0 ? (
+                    <div className="hint">Пока пусто — запусти Run.</div>
+                  ) : (
+                    journalEvents.map((ev) => {
+                      const active = ev.focusNodeId && String(ev.focusNodeId) === String(focusNodeId);
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          className="secondary-btn"
+                          onClick={() => ev.focusNodeId && setFocusNodeId(String(ev.focusNodeId))}
+                          title={ev.focusNodeId ? `focus: ${ev.focusNodeId}` : ""}
+                          style={{
+                            textAlign: "left",
+                            justifyContent: "flex-start",
+                            gap: 8,
+                            background: active ? "rgba(185,200,230,0.10)" : undefined,
+                            borderColor: active ? "rgba(185,200,230,0.28)" : undefined,
+                          }}
+                        >
+                          <span className="mono" style={{ opacity: 0.85 }}>
+                            {ev.kind === "tool_call" ? "tool" : ev.role}
+                          </span>
+                          <span className="mono" style={{ opacity: 0.95 }}>
+                            {ev.label}
+                          </span>
+                          <span className="mono" style={{ marginLeft: "auto", opacity: 0.65 }}>
+                            {ev.focusNodeId || "—"}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
               {runStreamError ? <div className="error">{runStreamError}</div> : null}
               {apiError ? <div className="error">{apiError}</div> : null}
 
@@ -1233,11 +1336,11 @@ export default function App() {
               )}
             </div>
               )}
-              right={<GraphView assistantId={assistantId} />}
+              right={<GraphView assistantId={assistantId} focusNodeId={focusNodeId} onNodeSelected={setFocusNodeId} />}
             />
           )}
 
-          {tab === "graph" && <GraphView assistantId={assistantId} />}
+          {tab === "graph" && <GraphView assistantId={assistantId} focusNodeId={focusNodeId} onNodeSelected={setFocusNodeId} />}
 
           {tab === "history" && (
             <div className="card">

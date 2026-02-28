@@ -204,7 +204,11 @@ function FancySelect({ labelRu, labelEn, value, options, onChange, disabled, pla
   );
 }
 
-export default function GraphView({ assistantId }) {
+export default function GraphView({
+  assistantId,
+  focusNodeId = "",
+  onNodeSelected,
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -212,6 +216,8 @@ export default function GraphView({ assistantId }) {
 
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  const [rf, setRf] = useState(null); // ReactFlow instance (onInit)
 
   const hasGraph = nodes.length > 0;
 
@@ -286,6 +292,34 @@ export default function GraphView({ assistantId }) {
       { value: "TB", label: "Top → Bottom", title: "Top → Bottom" },
     ],
     []
+  );
+
+  // Центрирование на ноде (для синхронизации Journal -> Graph)
+  useEffect(() => {
+    if (!rf || !focusNodeId) return;
+    const n = nodes.find((x) => String(x.id) === String(focusNodeId));
+    if (!n) return;
+
+    const px = (n.position?.x ?? 0) + NODE_W / 2;
+    const py = (n.position?.y ?? 0) + NODE_H / 2;
+
+    try {
+      if (typeof rf.setCenter === "function") {
+        rf.setCenter(px, py, { duration: 260, zoom: Math.max(0.9, rf.getZoom?.() ?? 1) });
+      } else if (typeof rf.fitView === "function") {
+        rf.fitView({ padding: 0.22, duration: 260, nodes: [n] });
+      }
+    } catch {
+      // игнорируем, это UI-улучшение
+    }
+  }, [rf, focusNodeId, nodes]);
+
+  const onNodeClick = useCallback(
+    (_ev, node) => {
+      if (!node?.id) return;
+      onNodeSelected?.(String(node.id));
+    },
+    [onNodeSelected]
   );
 
   return (
@@ -363,6 +397,8 @@ export default function GraphView({ assistantId }) {
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onInit={setRf}
           fitView
           fitViewOptions={{ padding: 0.18 }}
           proOptions={{ hideAttribution: true }}

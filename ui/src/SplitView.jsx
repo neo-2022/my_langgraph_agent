@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import Tooltip from "./Tooltip.jsx";
 
 /**
  * SplitView
  * modes: "run" | "split"
- * - split: resizable horizontal split with draggable divider
- * - stores divider position in localStorage
- *
- * props:
- *   mode: "run" | "split"
- *   onModeChange?: (mode)=>void   // (оставили для совместимости, но UI-кнопок тут больше нет)
- *   left: ReactNode
- *   right: ReactNode
- *   storageKey?: string
  */
 export default function SplitView({
   mode,
@@ -38,7 +30,6 @@ export default function SplitView({
     } catch {}
   }, [leftPct, storageKey]);
 
-  // если экран очень узкий — split превращаем в вертикальный stack
   const [isNarrow, setIsNarrow] = useState(false);
   useEffect(() => {
     const calc = () => setIsNarrow(window.innerWidth < 980);
@@ -72,7 +63,6 @@ export default function SplitView({
       const px = (st.startPct / 100) * st.rectW + dx;
       const pct = (px / st.rectW) * 100;
 
-      // ограничения чтобы не схлопывалось
       const clamped = Math.max(22, Math.min(78, pct));
       setLeftPct(clamped);
     };
@@ -88,9 +78,6 @@ export default function SplitView({
     window.addEventListener("mouseup", onUp, true);
   };
 
-  // layout:
-  // - run: single left
-  // - split: two panels (или stack на narrow)
   return (
     <div className="sv" ref={rootRef}>
       {mode === "run" ? (
@@ -106,16 +93,17 @@ export default function SplitView({
             {left}
           </div>
 
-          <div
-            className="sv__divider"
-            onMouseDown={startDrag}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize"
-            data-tip="Потяни, чтобы изменить ширину"
-          >
-            <div className="sv__divider-grip" />
-          </div>
+          <Tooltip tip="Потяни, чтобы изменить ширину" scope="viewport">
+            <div
+              className="sv__divider"
+              onMouseDown={startDrag}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize"
+            >
+              <div className="sv__divider-grip" />
+            </div>
+          </Tooltip>
 
           <div className="sv__pane sv__pane--right" style={{ width: `${100 - leftPct}%` }}>
             {right}

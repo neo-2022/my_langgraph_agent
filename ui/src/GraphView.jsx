@@ -1,133 +1,94 @@
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  useEdgesState,
-  useNodesState,
-} from "reactflow";
+import ReactFlow, { Background, Controls, MiniMap, useEdgesState, useNodesState } from "reactflow";
 import dagre from "dagre";
+import Tooltip from "./Tooltip.jsx";
+import "./GraphView.css";
 
-const NODE_W = 210;
-const NODE_H = 56;
+async function getJson(url, opts = {}) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return await r.json();
+}
 
-function layoutDagre(nodes, edges, direction = "LR") {
+function rfNodeFromApi(n) {
+  const id = String(n?.id ?? "");
+  return {
+    id,
+    position: { x: 0, y: 0 },
+    data: { label: String(n?.label ?? id) },
+    type: "default",
+    className: n?.kind ? `lg-node--${n.kind}` : "",
+  };
+}
+function rfEdgeFromApi(e) {
+  return {
+    id: String(e?.id ?? `${e?.source}->${e?.target}`),
+    source: String(e?.source ?? ""),
+    target: String(e?.target ?? ""),
+    label: e?.label ? String(e.label) : "",
+  };
+}
+
+function layoutDagre(nodes, edges, direction) {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, nodesep: 40, ranksep: 80 });
 
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }));
+  const isLR = direction === "LR";
+  g.setGraph({ rankdir: isLR ? "LR" : "TB", nodesep: 26, ranksep: 46 });
+
+  nodes.forEach((n) => g.setNode(n.id, { width: 180, height: 46 }));
   edges.forEach((e) => g.setEdge(e.source, e.target));
 
   dagre.layout(g);
 
-  const outNodes = nodes.map((n) => {
+  const laidNodes = nodes.map((n) => {
     const p = g.node(n.id);
-    return {
-      ...n,
-      position: { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 },
-      sourcePosition: direction === "LR" ? "right" : "bottom",
-      targetPosition: direction === "LR" ? "left" : "top",
-    };
+    return { ...n, position: { x: p.x, y: p.y } };
   });
 
-  return { nodes: outNodes, edges };
+  return { nodes: laidNodes, edges };
 }
 
-function rfNodeFromApi(n) {
-  const label = n?.data?.name || n?.data?.label || n?.id || "(node)";
-  const kind = n?.type || "node";
-  const isStart = n.id === "__start__";
-  const isEnd = n.id === "__end__";
-
-  const className = ["lg-node", isStart ? "lg-node--start" : "", isEnd ? "lg-node--end" : ""]
-    .filter(Boolean)
-    .join(" ");
-
-  return {
-    id: String(n.id),
-    type: "default",
-    data: { label: isStart ? "START" : isEnd ? "END" : label, kind },
-    position: { x: 0, y: 0 },
-    className,
-  };
-}
-
-function rfEdgeFromApi(e, idx) {
-  const id = e?.id ? String(e.id) : `e-${e?.source}-${e?.target}-${idx}`;
-  const conditional = Boolean(e?.conditional);
-  return {
-    id,
-    source: String(e.source),
-    target: String(e.target),
-    animated: conditional,
-    label: conditional ? "cond" : "",
-    style: conditional ? { strokeDasharray: "6 4" } : undefined,
-  };
-}
-
-async function getJson(path) {
-  const r = await fetch(path);
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    throw new Error(`HTTP ${r.status}: ${txt || "ошибка"}`);
-  }
-  return await r.json();
-}
-
-/**
- * FancySelect: меню порталом в body.
- * Даём наружу ref на кнопку (buttonRefExternal), чтобы синхронизировать ширину Refresh.
- */
 function FancySelect({
   value,
   options,
   onChange,
   disabled,
-  placeholder = "—",
-  tip,
-  buttonRefExternal,
+  placeholder = "Select",
+  tip = "",
+  buttonRefExternal = null,
 }) {
-  const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
   const menuRef = useRef(null);
+  const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState({ left: 0, top: 0, width: 260 });
-
-  const selected = options.find((o) => String(o.value) === String(value)) || null;
-  const close = useCallback(() => setOpen(false), []);
 
   const setBtnRef = useCallback(
     (el) => {
       btnRef.current = el;
-      if (buttonRefExternal) buttonRefExternal.current = el;
+      if (typeof buttonRefExternal === "object" && buttonRefExternal) buttonRefExternal.current = el;
     },
     [buttonRefExternal]
   );
 
-  const computePos = useCallback(() => {
-    const el = btnRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const w = r.width;
-    const maxH = 320;
+  const selected = options.find((o) => String(o.value) === String(value));
+  const close = () => setOpen(false);
 
-    const spaceBelow = window.innerHeight - r.bottom - 10;
-    const spaceAbove = r.top - 10;
-    const openDown = spaceBelow >= Math.min(maxH, 220) || spaceBelow >= spaceAbove;
-
-    const top = openDown ? r.bottom + 4 : Math.max(10, r.top - 4 - Math.min(maxH, 300));
-
+  const compute = useCallback(() => {
+    const b = btnRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
     setMenuPos({
-      left: Math.min(window.innerWidth - 10 - w, Math.max(10, r.left)),
-      top,
-      width: w,
+      left: Math.max(10, Math.min(window.innerWidth - r.width - 10, r.left)),
+      top: r.bottom + 8,
+      width: r.width,
     });
   }, []);
 
   useEffect(() => {
     if (!open) return;
-    computePos();
+    compute();
 
     const onDoc = (e) => {
       const b = btnRef.current;
@@ -136,25 +97,18 @@ function FancySelect({
       if (b.contains(e.target) || m.contains(e.target)) return;
       close();
     };
+    const onReflow = () => compute();
 
-    const onKey = (e) => {
-      if (e.key === "Escape") close();
-    };
-
-    const onReflow = () => computePos();
-
-    document.addEventListener("mousedown", onDoc, true);
-    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDoc);
     window.addEventListener("scroll", onReflow, true);
     window.addEventListener("resize", onReflow);
 
     return () => {
-      document.removeEventListener("mousedown", onDoc, true);
-      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
       window.removeEventListener("scroll", onReflow, true);
       window.removeEventListener("resize", onReflow);
     };
-  }, [open, close, computePos]);
+  }, [open, compute]);
 
   const menu = open
     ? createPortal(
@@ -193,28 +147,28 @@ function FancySelect({
 
   return (
     <>
-      <button
-        ref={setBtnRef}
-        type="button"
-        className={`fselect ${disabled ? "fselect--disabled" : ""}`}
-        onClick={() => !disabled && setOpen((v) => !v)}
-        aria-expanded={open ? "true" : "false"}
-        disabled={disabled}
-        data-tip={tip || ""}
-        aria-label={tip || "Выбор"}
-        style={{
-          width: "max-content",   // ширина по контенту
-          maxWidth: "70vw",
-          marginTop: 0,           // на всякий
-        }}
-      >
-        <span className="fselect__value" style={{ whiteSpace: "nowrap" }}>
-          {selected ? selected.label : <span className="fselect__placeholder">{placeholder}</span>}
-        </span>
-        <span className="fselect__chev" aria-hidden="true">
-          ▾
-        </span>
-      </button>
+      <Tooltip tip={tip} scope="viewport">
+        <button
+          ref={setBtnRef}
+          type="button"
+          className={`fselect ${disabled ? "fselect--disabled" : ""}`}
+          onClick={() => !disabled && setOpen((v) => !v)}
+          aria-expanded={open ? "true" : "false"}
+          disabled={disabled}
+          style={{
+            width: "max-content",
+            maxWidth: "70vw",
+            marginTop: 0,
+          }}
+        >
+          <span className="fselect__value" style={{ whiteSpace: "nowrap" }}>
+            {selected ? selected.label : <span className="fselect__placeholder">{placeholder}</span>}
+          </span>
+          <span className="fselect__chev" aria-hidden="true">
+            ▾
+          </span>
+        </button>
+      </Tooltip>
       {menu}
     </>
   );
@@ -224,18 +178,39 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [direction, setDirection] = useState("LR"); // LR | TB
+  const [direction, setDirection] = useState("LR");
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
   const hasGraph = nodes.length > 0;
 
+  const inFlightRef = useRef(false);
+  const lastFetchRef = useRef({ key: "", ts: 0 });
+  const abortRef = useRef(null);
+
   const loadGraph = useCallback(async () => {
     if (!assistantId) return;
+
+    const key = `${assistantId}|${direction}`;
+    const now = Date.now();
+
+    if (inFlightRef.current) return;
+    if (lastFetchRef.current.key === key && now - lastFetchRef.current.ts < 2000) return;
+
+    lastFetchRef.current = { key, ts: now };
+    inFlightRef.current = true;
+
+    try {
+      abortRef.current?.abort?.();
+    } catch {}
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     setError("");
     setLoading(true);
+
     try {
-      const data = await getJson(`/api/assistants/${assistantId}/graph`);
+      const data = await getJson(`/api/assistants/${assistantId}/graph`, { signal: ctrl.signal });
       const apiNodes = Array.isArray(data?.nodes) ? data.nodes : [];
       const apiEdges = Array.isArray(data?.edges) ? data.edges : [];
 
@@ -246,17 +221,28 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       setNodes(laid.nodes);
       setEdges(laid.edges);
     } catch (e) {
-      setError(String(e?.message || e));
-      setNodes([]);
-      setEdges([]);
+      if (String(e?.name) !== "AbortError") {
+        setError(String(e?.message || e));
+        setNodes([]);
+        setEdges([]);
+      }
     } finally {
       setLoading(false);
+      inFlightRef.current = false;
     }
   }, [assistantId, direction, setNodes, setEdges]);
 
   useEffect(() => {
     loadGraph();
   }, [loadGraph]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        abortRef.current?.abort?.();
+      } catch {}
+    };
+  }, []);
 
   const hint = useMemo(() => {
     if (!assistantId) return "Нет assistant_id. Открой Run и убедись, что /api доступен.";
@@ -266,7 +252,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     return "";
   }, [assistantId, loading, error, hasGraph]);
 
-  // Убираем нативные title у ReactFlow Controls
+  // ReactFlow Controls (lib) — оставляем data-tip + CSS override в GraphView.css
   useEffect(() => {
     const root = document.querySelector(".react-flow");
     if (!root) return;
@@ -286,7 +272,6 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     return () => mo.disconnect();
   }, []);
 
-  // RU подписи для Controls (в т.ч. замок)
   useEffect(() => {
     const root = document.querySelector(".react-flow");
     if (!root) return;
@@ -328,7 +313,6 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     []
   );
 
-  // Refresh width = width of the direction button (exact)
   const dirBtnRef = useRef(null);
   const [refreshW, setRefreshW] = useState(0);
 
@@ -345,7 +329,6 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     const el = dirBtnRef.current;
     if (!el) return;
 
-    // Самый надёжный способ: следим за размером кнопки (текст/шрифт/масштаб)
     let ro = null;
     if (typeof ResizeObserver !== "undefined") {
       ro = new ResizeObserver(() => measure());
@@ -355,7 +338,6 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     const onResize = () => measure();
     window.addEventListener("resize", onResize);
 
-    // Доп. замер чуть позже (шрифты/рендер)
     const t = window.setTimeout(() => measure(), 50);
 
     return () => {
@@ -369,22 +351,10 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
 
   return (
     <div
-      className="card"
-      style={{
-        height: "100%",
-        minHeight: 0,
-        padding: 0,
-        display: "flex",
-        flexDirection: "column",
-      }}
+      className="card graphview"
+      style={{ height: "100%", minHeight: 0, padding: 0, display: "flex", flexDirection: "column" }}
     >
-      <div
-        style={{
-          padding: 12,
-          borderBottom: "1px solid rgba(255,255,255,0.10)",
-          background: "rgba(255,255,255,0.03)",
-        }}
-      >
+      <div style={{ padding: 12, borderBottom: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.03)" }}>
         <div className="graphbar">
           <div className="graphbar__controls" style={{ alignItems: "center", flexWrap: "nowrap" }}>
             <FancySelect
@@ -397,21 +367,22 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
               buttonRefExternal={dirBtnRef}
             />
 
-            <button
-              className="secondary-btn"
-              type="button"
-              onClick={loadGraph}
-              disabled={!assistantId || loading}
-              data-tip="Обновить граф"
-              aria-label="Обновить граф"
-              style={{
-                height: 42,
-                width: refreshW ? `${refreshW}px` : undefined,
-                marginTop: 0, // ВАЖНО: убрать любые сдвиги
-              }}
-            >
-              {loading ? "Загружаю…" : "Refresh"}
-            </button>
+            <Tooltip tip="Обновить граф" scope="viewport">
+              <button
+                className="secondary-btn"
+                type="button"
+                onClick={loadGraph}
+                disabled={!assistantId || loading}
+                aria-label="Обновить граф"
+                style={{
+                  height: 42,
+                  width: refreshW ? `${refreshW}px` : undefined,
+                  marginTop: 0,
+                }}
+              >
+                {loading ? "Загружаю…" : "Refresh"}
+              </button>
+            </Tooltip>
           </div>
 
           <div className="graphbar__spacer" />

@@ -1,0 +1,251 @@
+/* ===========================
+   GraphView scoped styles
+   ВАЖНО: всё только внутри .graphview
+   =========================== */
+
+.graphview .react-flow__attribution{
+  display: none !important;
+}
+
+/* Canvas background (необязательно, но помогает вернуть “вид”) */
+.graphview .react-flow{
+  background: rgba(0,0,0,0.10);
+}
+
+/* Edges */
+.graphview .react-flow__edge-path{
+  stroke: rgba(255,255,255,0.28) !important;
+  stroke-width: 1.5 !important;
+}
+.graphview .react-flow__edge.animated .react-flow__edge-path{
+  stroke-dasharray: 6 4 !important;
+  animation: dashdraw 0.6s linear infinite;
+}
+@keyframes dashdraw{
+  to { stroke-dashoffset: -10; }
+}
+
+/* Edge labels */
+.graphview .react-flow__edge-text{
+  fill: rgba(255,255,255,0.90) !important;
+  font-size: 12px !important;
+}
+.graphview .react-flow__edge-textbg{
+  fill: rgba(0,0,0,0.45) !important;
+}
+
+/* Handles */
+.graphview .react-flow__handle{
+  background: rgba(255,255,255,0.38) !important;
+  border: 1px solid rgba(0,0,0,0.35) !important;
+}
+
+/* Nodes */
+.graphview .react-flow__node-default{
+  border-radius: 14px !important;
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.06) !important;
+  color: rgba(255,255,255,0.92) !important;
+  box-shadow:
+    0 10px 22px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+
+/* Node text (на случай, если либ/темы вставляют свои классы) */
+.graphview .react-flow__node-default .react-flow__node-default__label,
+.graphview .react-flow__node-default .react-flow__node-default__content,
+.graphview .react-flow__node-default .react-flow__node-default__body,
+.graphview .react-flow__node-default .react-flow__node-default__text,
+.graphview .react-flow__node-default .react-flow__node-default__title{
+  color: rgba(255,255,255,0.92) !important;
+}
+
+/* Accent nodes by kind via className on node */
+.graphview .lg-node--start.react-flow__node-default,
+.graphview .lg-node--start .react-flow__node-default{
+  border-color: rgba(0,255,160,0.26) !important;
+  background: rgba(0,255,160,0.08) !important;
+}
+.graphview .lg-node--end.react-flow__node-default,
+.graphview .lg-node--end .react-flow__node-default{
+  border-color: rgba(255,90,90,0.26) !important;
+  background: rgba(255,90,90,0.08) !important;
+}
+
+/* MiniMap */
+.graphview .react-flow__minimap{
+  border-radius: 16px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255,255,255,0.12) !important;
+  background: rgba(0,0,0,0.28) !important;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.28) !important;
+}
+.graphview .react-flow__minimap-mask{
+  fill: rgba(0,0,0,0.50) !important;
+}
+.graphview .react-flow__minimap-node{
+  fill: rgba(255,255,255,0.12) !important;
+  stroke: rgba(255,255,255,0.18) !important;
+  stroke-width: 1px !important;
+}
+.graphview .react-flow__minimap-node.lg-node--start{
+  fill: rgba(0,255,160,0.18) !important;
+  stroke: rgba(0,255,160,0.28) !important;
+}
+.graphview .react-flow__minimap-node.lg-node--end{
+  fill: rgba(255,90,90,0.18) !important;
+  stroke: rgba(255,90,90,0.28) !important;
+}
+
+/* Controls container */
+.graphview .react-flow__controls{
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  gap: 8px !important;
+}
+
+/* Controls buttons: круглые */
+.graphview .react-flow__controls button{
+  position: relative;
+  width: 36px !important;
+  height: 36px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+
+  border: 1px solid rgba(255,255,255,0.14) !important;
+  background: rgba(255,255,255,0.06) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    0 10px 22px rgba(0,0,0,0.22) !important;
+
+  display: grid !important;
+  place-items: center !important;
+
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 140ms ease !important;
+}
+.graphview .react-flow__controls button:hover{
+  background: rgba(255,255,255,0.09) !important;
+  border-color: rgba(255,255,255,0.20) !important;
+  transform: translateY(-1px) !important;
+}
+.graphview .react-flow__controls button:active{
+  transform: translateY(0px) scale(0.98) !important;
+}
+.graphview .react-flow__controls button[aria-pressed="true"]{
+  background: rgba(255,255,255,0.12) !important;
+  border-color: rgba(185,200,230,0.26) !important;
+  box-shadow:
+    0 0 0 3px rgba(185,200,230,0.08),
+    0 12px 26px rgba(0,0,0,0.28) !important;
+}
+
+/* Icons forced light */
+.graphview .react-flow__controls button svg{
+  width: 18px !important;
+  height: 18px !important;
+  display: block !important;
+  filter:
+    drop-shadow(0 1px 0 rgba(0,0,0,0.35))
+    drop-shadow(0 0 10px rgba(185,200,230,0.06));
+  opacity: 0.98 !important;
+}
+.graphview .react-flow__controls button svg path,
+.graphview .react-flow__controls button svg line,
+.graphview .react-flow__controls button svg polyline,
+.graphview .react-flow__controls button svg polygon,
+.graphview .react-flow__controls button svg circle,
+.graphview .react-flow__controls button svg rect{
+  fill: rgba(255,255,255,0.90) !important;
+  stroke: rgba(255,255,255,0.90) !important;
+}
+.graphview .react-flow__controls button:hover svg path,
+.graphview .react-flow__controls button:hover svg line,
+.graphview .react-flow__controls button:hover svg polyline,
+.graphview .react-flow__controls button:hover svg polygon,
+.graphview .react-flow__controls button:hover svg circle,
+.graphview .react-flow__controls button:hover svg rect{
+  fill: rgba(255,255,255,0.98) !important;
+  stroke: rgba(255,255,255,0.98) !important;
+}
+
+.graphview .react-flow__controls button:disabled{
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* Tooltip for controls from data-tip — СПРАВА от кнопок */
+.graphview .react-flow__controls button[data-tip]::after{
+  content: attr(data-tip);
+  position: absolute;
+
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+
+  white-space: nowrap;
+  pointer-events: none;
+
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(0,0,0,0.72);
+  color: rgba(255,255,255,0.92);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.25px;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.35);
+
+  opacity: 0;
+  visibility: hidden;
+
+  transition: opacity 120ms ease, transform 120ms ease;
+  transition-delay: 0.25s;
+  z-index: 9999;
+}
+.graphview .react-flow__controls button[data-tip]::before{
+  content: "";
+  position: absolute;
+
+  left: calc(100% + 4px);
+  top: 50%;
+  width: 10px;
+  height: 10px;
+
+  background: rgba(0,0,0,0.72);
+  border-left: 1px solid rgba(255,255,255,0.14);
+  border-bottom: 1px solid rgba(255,255,255,0.14);
+
+  transform: translateY(-50%) rotate(45deg);
+
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+
+  transition: opacity 120ms ease;
+  transition-delay: 0.25s;
+  z-index: 9998;
+}
+.graphview .react-flow__controls button[data-tip]:hover::after,
+.graphview .react-flow__controls button[data-tip]:focus-visible::after{
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(2px);
+  transition-delay: 0s;
+}
+.graphview .react-flow__controls button[data-tip]:hover::before,
+.graphview .react-flow__controls button[data-tip]:focus-visible::before{
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* Если кнопка disabled — не показываем */
+.graphview .react-flow__controls button:disabled::after,
+.graphview .react-flow__controls button:disabled::before{
+  display: none !important;
+}

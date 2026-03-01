@@ -1,0 +1,73 @@
+/* ===========================
+   Rail logo scoped styles
+   ВАЖНО: не ломаем общий стиль, только переопределяем локально
+   =========================== */
+
+.rail__logo{
+  position: relative;
+  overflow: hidden;
+}
+
+/* Прячем старое содержимое логотипа (если там иконка/буква) */
+.rail__logo > *{
+  opacity: 0 !important;
+}
+
+/* Рисуем “герб” как mask + золотой градиент */
+.rail__logo::before{
+  content: "";
+  position: absolute;
+  inset: 7px;
+
+  /* золотой градиент */
+  background:
+    linear-gradient(135deg,
+      rgba(255, 245, 200, 0.95) 0%,
+      rgba(235, 190, 90, 0.98) 32%,
+      rgba(180, 120, 30, 0.98) 60%,
+      rgba(255, 220, 140, 0.92) 100%
+    );
+
+  /* используем подготовленную маску (alpha) */
+  -webkit-mask-image: url("./assets/crest-mask.png");
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+
+  mask-image: url("./assets/crest-mask.png");
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: contain;
+
+  filter:
+    drop-shadow(0 10px 18px rgba(0,0,0,0.35))
+    drop-shadow(0 0 12px rgba(235,190,90,0.10));
+
+  opacity: 0.98;
+}
+
+/* Лёгкий “ореол” */
+.rail__logo::after{
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background:
+    radial-gradient(circle at 50% 45%,
+      rgba(235,190,90,0.10) 0%,
+      rgba(235,190,90,0.04) 22%,
+      transparent 55%
+    );
+  pointer-events: none;
+}
+
+/* Если mask не поддерживается — fallback: показываем png как есть (без золота) */
+@supports not ((-webkit-mask-image: url("x")) or (mask-image: url("x"))){
+  .rail__logo::before{
+    background: none;
+    background-image: url("./assets/crest-mask.png");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    opacity: 0.92;
+  }
+}

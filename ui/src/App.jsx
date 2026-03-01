@@ -28,6 +28,7 @@ function TabButton({ active, onClick, children }) {
     </button>
   );
 }
+
 function Badge({ children, tone = "neutral" }) {
   return <span className={`badge badge--${tone}`}>{children}</span>;
 }
@@ -156,10 +157,9 @@ function IconBtn({ label, onClick, children, disabled }) {
 /**
  * RailButton:
  * - НЕ используем title (нативный tooltip браузера)
- * - используем data-tip (наш CSS-tooltip)
+ * - tooltip порталом, чтобы не обрезался
  */
 function RailButton({ active, onClick, children, tip }) {
-  // tip = русский tooltip (и aria-label). Tooltip рисуем порталом, чтобы не обрезался.
   const btnRef = useRef(null);
   const tipRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -203,7 +203,11 @@ function RailButton({ active, onClick, children, tip }) {
     const spaceLeft = r.left - margin;
 
     const side =
-      spaceRight >= tr.width + 12 ? "right" : spaceLeft >= tr.width + 12 ? "left" : "right";
+      spaceRight >= tr.width + 12
+        ? "right"
+        : spaceLeft >= tr.width + 12
+        ? "left"
+        : "right";
 
     // Y clamp (центрируем по кнопке)
     let top = r.top + r.height / 2;
@@ -211,42 +215,44 @@ function RailButton({ active, onClick, children, tip }) {
     top = Math.max(margin + halfH, Math.min(vh - margin - halfH, top));
 
     // X позиция (tooltip “прилеплен” сбоку)
-    let left = side === "right" ? (r.right + margin) : (r.left - margin);
+    let left = side === "right" ? r.right + margin : r.left - margin;
     left = Math.max(margin, Math.min(vw - margin, left));
 
     setPos({ left, top, side });
   }, [open]);
 
-  const tooltip = open && tip
-    ? createPortal(
-        <div
-          ref={tipRef}
-          style={{
-            position: "fixed",
-            left: pos.left,
-            top: pos.top,
-            transform: pos.side === "right"
-              ? "translateY(-50%)"
-              : "translate(-100%, -50%)",
-            zIndex: 10050,
-            padding: "6px 10px",
-            borderRadius: 10,
-            fontSize: 12,
-            lineHeight: 1.2,
-            color: "rgba(255,255,255,0.92)",
-            background: "rgba(0,0,0,0.82)",
-            border: "1px solid rgba(255,255,255,0.14)",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-            maxWidth: 260,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
-          }}
-        >
-          {tip}
-        </div>,
-        document.body
-      )
-    : null;
+  const tooltip =
+    open && tip
+      ? createPortal(
+          <div
+            ref={tipRef}
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              transform:
+                pos.side === "right"
+                  ? "translateY(-50%)"
+                  : "translate(-100%, -50%)",
+              zIndex: 10050,
+              padding: "6px 10px",
+              borderRadius: 10,
+              fontSize: 12,
+              lineHeight: 1.2,
+              color: "rgba(255,255,255,0.92)",
+              background: "rgba(0,0,0,0.82)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              maxWidth: 260,
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+            }}
+          >
+            {tip}
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
     <>
@@ -267,7 +273,6 @@ function RailButton({ active, onClick, children, tip }) {
     </>
   );
 }
-
 
 async function getJson(path) {
   const r = await fetch(path);
@@ -938,13 +943,13 @@ export default function App() {
 
   const rail = (
     <nav className="rail">
-      <div
-        className="rail__logo"
-        data-tip="my_langgraph_agent"
-        role="img"
-        aria-label="my_langgraph_agent"
-      >
-        ⛓️
+      <div className="rail__brand" aria-hidden="true">
+        <div className="rail__brandLetter">R</div>
+        <div className="rail__brandLetter">E</div>
+        <div className="rail__brandLetter">G</div>
+        <div className="rail__brandLetter">A</div>
+        <div className="rail__brandLetter">R</div>
+        <div className="rail__brandLetter">T</div>
       </div>
 
       <div className="rail__group">
@@ -953,15 +958,11 @@ export default function App() {
             key={p.id}
             active={isOpen(p.id)}
             onClick={() => togglePanel(p.id)}
-            title={p.title}
-           tip={p.ruTitle || p.title}>
+            tip={p.ruTitle || p.title}
+          >
             {p.title}
           </RailButton>
         ))}
-      </div>
-
-      <div className="rail__hint">
-        Нажимай ярлычок — панель откроется/закроется. Можно открыть несколько.
       </div>
     </nav>
   );
@@ -1031,9 +1032,7 @@ export default function App() {
                 </div>
 
                 {assistantInfo ? <div className="ok">{assistantInfo}</div> : null}
-                {assistantErr ? (
-                  <div className="error">{assistantErr}</div>
-                ) : null}
+                {assistantErr ? <div className="error">{assistantErr}</div> : null}
               </div>
 
               <div className="sidebar__section">
@@ -1133,7 +1132,6 @@ export default function App() {
               </div>
 
               <div className="sidebar__section" style={{ marginTop: 10 }}>
-
                 <div
                   style={{
                     display: "flex",
@@ -1161,7 +1159,9 @@ export default function App() {
                   </button>
                 </div>
 
-                {toolCallsProbeError ? <div className="error">{toolCallsProbeError}</div> : null}
+                {toolCallsProbeError ? (
+                  <div className="error">{toolCallsProbeError}</div>
+                ) : null}
 
                 <div style={{ marginTop: 10 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -1381,17 +1381,7 @@ export default function App() {
           </a>
         </div>
 
-        <div
-          className="content"
-          style={
-            tab === "graph"
-              ? { paddingRight: 0, paddingBottom: 0 }
-              : tab === "run"
-              ? { padding: "10px 0 10px 12px" }
-              : undefined
-          }
-          data-tab={tab}
-        >
+        <div className="content" data-tab={tab}>
           {tab === "run" && (
             <SplitView
               mode={splitMode}

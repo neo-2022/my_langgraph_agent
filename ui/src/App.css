@@ -23,41 +23,75 @@
   --drawer-w: 340px;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-/* Scrollbars: серые */
+/* =========================
+   Scrollbars: серые
+   ========================= */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) rgba(255, 255, 255, 0.04);
 }
-::-webkit-scrollbar { width: 10px; height: 10px; }
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
 ::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 999px;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.16);
   border-radius: 999px;
   border: 2px solid rgba(0, 0, 0, 0.28);
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.20); }
 
-html { color-scheme: dark; }
-html, body, #root { height: 100%; }
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.20);
+}
+
+html {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
 
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial,
     "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
   background:
-    radial-gradient(900px 520px at 10% 0%, rgba(255, 255, 255, 0.06), transparent 62%),
-    radial-gradient(750px 520px at 90% 10%, rgba(185, 200, 230, 0.04), transparent 58%),
+    radial-gradient(
+      900px 520px at 10% 0%,
+      rgba(255, 255, 255, 0.06),
+      transparent 62%
+    ),
+    radial-gradient(
+      750px 520px at 90% 10%,
+      rgba(185, 200, 230, 0.04),
+      transparent 58%
+    ),
     linear-gradient(180deg, var(--bg), #07080c 82%);
   color: var(--text);
 }
 
-a { color: rgba(220, 225, 235, 0.92); text-decoration: none; }
-a:hover { text-decoration: underline; }
+a {
+  color: rgba(220, 225, 235, 0.92);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -70,7 +104,9 @@ a:hover { text-decoration: underline; }
   overflow: hidden;
 }
 
-/* Rail */
+/* =========================
+   Rail
+   ========================= */
 .rail {
   width: var(--rail-w);
   display: flex;
@@ -95,6 +131,75 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.26);
 }
 
+/* =========================
+   Rail brand: REGART (vertical letters)
+   ========================= */
+.rail__brand {
+  margin: 2px auto 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  user-select: none;
+  pointer-events: none; /* чисто декор */
+}
+
+.rail__brandLetter {
+  font-weight: 900;
+  letter-spacing: 0.6px;
+
+  /* x1.5 (было ~12px => стало 18px) */
+  font-size: 27px;
+  line-height: 1;
+
+  /* gold */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 248, 210, 0.98) 0%,
+    rgba(240, 200, 105, 0.98) 28%,
+    rgba(183, 120, 35, 0.98) 58%,
+    rgba(255, 224, 150, 0.96) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+
+  /* emboss / glow */
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.55),
+    0 10px 18px rgba(0, 0, 0, 0.28),
+    0 0 10px rgba(235, 190, 90, 0.10);
+
+  filter:
+    drop-shadow(0 8px 16px rgba(0, 0, 0, 0.18))
+    drop-shadow(0 0 10px rgba(235, 190, 90, 0.08));
+
+  transform: translateY(0);
+  animation: railBrandFloat 5.6s ease-in-out infinite;
+}
+
+/* лёгкое “парение”, не навязчиво */
+@keyframes railBrandFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.98;
+  }
+  50% {
+    transform: translateY(-1.6px);
+    opacity: 1;
+  }
+}
+
+/* чуть разная фаза, чтобы не “дышало” как один блок */
+.rail__brandLetter:nth-child(odd) {
+  animation-delay: -1.2s;
+}
+
+.rail__brandLetter:nth-child(even) {
+  animation-delay: -2.6s;
+}
+
 .rail__group {
   display: flex;
   flex-direction: column;
@@ -110,43 +215,60 @@ a:hover { text-decoration: underline; }
   color: var(--muted2);
 }
 
-/* Rail buttons */
+/* Rail buttons (match .tab-btn visuals; text direction controlled by .rail-btn__text) */
 .rail-btn {
   width: 100%;
-  min-height: 92px;
+  min-height: 52px;
+  padding: 0;
+
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 12px;
-  border: 1px solid transparent;
+
   background: rgba(255, 255, 255, 0.04);
   color: var(--muted);
+
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 6px;
+
+  font-weight: 520;
+  letter-spacing: 0.25px;
+
   transition: 160ms ease;
 }
+
 .rail-btn:hover {
-  background: rgba(255, 255, 255, 0.055);
   color: rgba(255, 255, 255, 0.82);
-}
-.rail-btn--active {
-  background: var(--accent);
-  border-color: var(--accent-border);
-  color: rgba(255, 255, 255, 0.90);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+  background: rgba(255, 255, 255, 0.06);
 }
 
+.rail-btn--active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 650;
+}
+
+/* Rail button text: vertical (independent from tab text) */
 .rail-btn__text {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
+  display: inline-block;
   white-space: nowrap;
+
+  /* rotate word, not letters */
+  writing-mode: horizontal-tb;
+  transform: rotate(-90deg);
+  transform-origin: center;
+
   font-size: 12px;
   font-weight: 520;
-  letter-spacing: 0.30px;
-  text-align: center;
+  letter-spacing: 0.25px;
+  line-height: 1.15;
 }
 
-/* Drawers */
+/* =========================
+   Drawers
+   ========================= */
 .drawers {
   display: flex;
   align-items: stretch;
@@ -193,7 +315,9 @@ a:hover { text-decoration: underline; }
   overflow: auto;
 }
 
-/* Main */
+/* =========================
+   Main
+   ========================= */
 .main {
   flex: 1;
   height: 100%;
@@ -211,7 +335,9 @@ a:hover { text-decoration: underline; }
   background: rgba(255, 255, 255, 0.03);
 }
 
-.topbar__spacer { flex: 1; }
+.topbar__spacer {
+  flex: 1;
+}
 
 .tabs {
   display: flex;
@@ -219,6 +345,80 @@ a:hover { text-decoration: underline; }
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* =========================
+   Topbar tooltips (scoped)
+   TabButton uses data-tip in App.jsx; keep tooltips local to topbar only.
+   This avoids global [data-tip] side effects and does not affect GraphView tooltips.
+   ========================= */
+.topbar .tab-btn[data-tip] {
+  position: relative;
+}
+
+.topbar .tab-btn[data-tip=""]::after,
+.topbar .tab-btn[data-tip=""]::before {
+  display: none;
+}
+
+.topbar .tab-btn:disabled[data-tip]::after,
+.topbar .tab-btn:disabled[data-tip]::before {
+  display: none;
+}
+
+.topbar .tab-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  pointer-events: none;
+
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(12, 14, 18, 0.92);
+  color: rgba(255, 255, 255, 0.90);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transition: 140ms ease;
+  z-index: 9999;
+}
+
+.topbar .tab-btn[data-tip]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  width: 10px;
+  height: 10px;
+  background: rgba(12, 14, 18, 0.92);
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  transform: translateX(-50%) rotate(45deg);
+  opacity: 0;
+  visibility: hidden;
+  transition: 140ms ease;
+  z-index: 9998;
+}
+
+.topbar .tab-btn[data-tip]:hover::after,
+.topbar .tab-btn[data-tip]:hover::before {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (max-width: 980px) {
+  .topbar .tab-btn[data-tip]::after,
+  .topbar .tab-btn[data-tip]::before {
+    display: none;
+  }
+}
+
 .content {
   padding: 10px 12px;
   overflow: auto;
@@ -233,19 +433,20 @@ a:hover { text-decoration: underline; }
 }
 
 /* Force Run tab to reach the full right edge (no right padding) */
-.content[data-tab="run"]{
+.content[data-tab="run"] {
   padding: 10px 0 10px 12px !important; /* top right bottom left */
 }
 
-
-.content > .sv{
-  width:100%;
-  min-width:0;
-  flex:1;
-  align-self:stretch;
+.content > .sv {
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  align-self: stretch;
 }
 
-/* Cards */
+/* =========================
+   Cards
+   ========================= */
 .card {
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
@@ -278,7 +479,9 @@ a:hover { text-decoration: underline; }
   background: rgba(0, 0, 0, 0.12);
 }
 
-/* Buttons */
+/* =========================
+   Buttons
+   ========================= */
 .primary-btn,
 .secondary-btn,
 .icon-btn,
@@ -297,15 +500,25 @@ a:hover { text-decoration: underline; }
   background: rgba(255, 255, 255, 0.09);
   border-color: rgba(255, 255, 255, 0.16);
 }
-.primary-btn:hover { background: rgba(255, 255, 255, 0.12); }
+
+.primary-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
 
 .secondary-btn:hover,
-.icon-btn:hover { background: rgba(255, 255, 255, 0.09); }
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
 
 .primary-btn:disabled,
-.secondary-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.secondary-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 
-.icon-btn { padding: 8px 10px; }
+.icon-btn {
+  padding: 8px 10px;
+}
 
 .tab-btn {
   padding: 8px 10px;
@@ -315,10 +528,12 @@ a:hover { text-decoration: underline; }
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.10);
 }
+
 .tab-btn:hover {
   color: rgba(255, 255, 255, 0.82);
   background: rgba(255, 255, 255, 0.06);
 }
+
 .tab-btn--active {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.14);
@@ -326,9 +541,14 @@ a:hover { text-decoration: underline; }
   font-weight: 650;
 }
 
-.ghost-link { color: rgba(220, 225, 235, 0.92); font-weight: 700; }
+.ghost-link {
+  color: rgba(220, 225, 235, 0.92);
+  font-weight: 700;
+}
 
-/* Labels */
+/* =========================
+   Labels / Selects
+   ========================= */
 .label {
   display: grid;
   gap: 8px;
@@ -346,9 +566,9 @@ a:hover { text-decoration: underline; }
   padding: 0 40px 0 12px;
   border-radius: 12px;
 
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.20);
-  color: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.20);
+  color: rgba(255, 255, 255, 0.92);
 
   outline: none;
   cursor: pointer;
@@ -359,8 +579,8 @@ a:hover { text-decoration: underline; }
   -moz-appearance: none;
 
   background-image:
-    linear-gradient(45deg, transparent 50%, rgba(255,255,255,0.70) 50%),
-    linear-gradient(135deg, rgba(255,255,255,0.70) 50%, transparent 50%);
+    linear-gradient(45deg, transparent 50%, rgba(255, 255, 255, 0.70) 50%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.70) 50%, transparent 50%);
   background-position:
     calc(100% - 18px) 18px,
     calc(100% - 12px) 18px;
@@ -368,26 +588,34 @@ a:hover { text-decoration: underline; }
   background-repeat: no-repeat;
 
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 10px 22px rgba(0,0,0,0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 22px rgba(0, 0, 0, 0.18);
 }
+
 .select:hover {
-  background: rgba(0,0,0,0.26);
-  border-color: rgba(255,255,255,0.16);
+  background: rgba(0, 0, 0, 0.26);
+  border-color: rgba(255, 255, 255, 0.16);
 }
+
 .select:focus {
-  border-color: rgba(185,200,230,0.32);
+  border-color: rgba(185, 200, 230, 0.32);
   box-shadow:
-    0 0 0 3px rgba(185,200,230,0.10),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+    0 0 0 3px rgba(185, 200, 230, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
+
 .select option {
   background: #0f1117;
   color: rgba(255, 255, 255, 0.92);
 }
 
 /* Graph fields (для FancySelect и кнопки refresh) */
-.field { width: 240px; display: grid; gap: 8px; }
+.field {
+  width: 240px;
+  display: grid;
+  gap: 8px;
+}
+
 .field__label {
   font-size: 12px;
   color: var(--muted);
@@ -398,16 +626,20 @@ a:hover { text-decoration: underline; }
   align-items: center;
   width: fit-content;
 }
+
 .field__label::after {
   content: attr(data-en);
   margin-left: 8px;
   opacity: 0;
   transform: translateY(1px);
   transition: 120ms ease;
-  color: rgba(255,255,255,0.42);
+  color: rgba(255, 255, 255, 0.42);
   font-weight: 520;
 }
-.field__label:hover::after { opacity: 1; }
+
+.field__label:hover::after {
+  opacity: 1;
+}
 
 /* FancySelect styling (Graph) */
 .fselect {
@@ -415,9 +647,9 @@ a:hover { text-decoration: underline; }
   height: 42px;
   border-radius: 12px;
 
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.20);
-  color: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.20);
+  color: rgba(255, 255, 255, 0.92);
 
   display: flex;
   align-items: center;
@@ -429,40 +661,62 @@ a:hover { text-decoration: underline; }
   transition: 140ms ease;
 
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 10px 22px rgba(0,0,0,0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 22px rgba(0, 0, 0, 0.18);
 }
-.fselect:hover {
-  background: rgba(0,0,0,0.26);
-  border-color: rgba(255,255,255,0.16);
-}
-.fselect:active { transform: scale(0.995); }
-.fselect--disabled { opacity: 0.55; cursor: not-allowed; }
 
-.fselect__value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fselect__placeholder { color: rgba(255,255,255,0.48); }
-.fselect__chev { opacity: 0.75; margin-left: 10px; }
+.fselect:hover {
+  background: rgba(0, 0, 0, 0.26);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.fselect:active {
+  transform: scale(0.995);
+}
+
+.fselect--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fselect__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fselect__placeholder {
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.fselect__chev {
+  opacity: 0.75;
+  margin-left: 10px;
+}
 
 /* Portal menu (Graph) */
 .fselect__menu {
   position: fixed;
   z-index: 9999;
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.14);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 12, 16, 0.96);
-  box-shadow: 0 22px 46px rgba(0,0,0,0.55);
+  box-shadow: 0 22px 46px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(12px);
 }
+
 .fselect__menu-inner {
   max-height: 320px;
   overflow: auto;
   padding: 6px;
 }
+
 .fselect__item {
   width: 100%;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(255,255,255,0.90);
+  color: rgba(255, 255, 255, 0.90);
   text-align: left;
   border-radius: 12px;
   padding: 10px 10px;
@@ -471,24 +725,43 @@ a:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
 }
-.fselect__item:hover {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.10);
-}
-.fselect__item--active {
-  background: rgba(185,200,230,0.10);
-  border-color: rgba(185,200,230,0.18);
-}
-.fselect__item--disabled { opacity: 0.55; cursor: default; }
-.fselect__item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* Sections */
+.fselect__item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+
+.fselect__item--active {
+  background: rgba(185, 200, 230, 0.10);
+  border-color: rgba(185, 200, 230, 0.18);
+}
+
+.fselect__item--disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.fselect__item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================
+   Sections
+   ========================= */
 .sidebar__section {
   margin-bottom: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
-.sidebar__section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.sidebar__section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
 
 .sidebar__section-title {
   font-size: 12px;
@@ -506,7 +779,12 @@ a:hover { text-decoration: underline; }
   align-items: center;
   margin: 8px 0;
 }
-.kv__k { color: var(--muted2); font-size: 12px; }
+
+.kv__k {
+  color: var(--muted2);
+  font-size: 12px;
+}
+
 .kv__v {
   display: flex;
   align-items: center;
@@ -524,7 +802,9 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.25px;
 }
 
-/* Messages */
+/* =========================
+   Messages
+   ========================= */
 .ok {
   margin-top: 8px;
   padding: 10px 12px;
@@ -535,6 +815,7 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   line-height: 1.35;
 }
+
 .error {
   margin-top: 8px;
   padding: 10px 12px;
@@ -546,14 +827,20 @@ a:hover { text-decoration: underline; }
   line-height: 1.35;
 }
 
-/* GraphBar layout */
+/* =========================
+   GraphBar layout
+   ========================= */
 .graphbar {
   display: flex;
   align-items: center;
-gap: 12px;
+  gap: 12px;
   flex-wrap: nowrap;
 }
-.graphbar__spacer { flex: 1; }
+
+.graphbar__spacer {
+  flex: 1;
+}
+
 .graphbar__controls {
   display: flex;
   gap: 12px;
@@ -579,234 +866,28 @@ gap: 12px;
   color: transparent;
 
   text-shadow:
-    0 1px 0 rgba(0,0,0,0.62),
-    0 10px 22px rgba(0,0,0,0.34),
+    0 1px 0 rgba(0, 0, 0, 0.62),
+    0 10px 22px rgba(0, 0, 0, 0.34),
     0 0 18px rgba(255, 215, 120, 0.10);
-}
-
-/* ---------------- ReactFlow overrides ---------------- */
-
-.react-flow__edge-path {
-  stroke: rgba(255, 255, 255, 0.28) !important;
-  stroke-width: 1.6 !important;
-}
-.react-flow__edge.animated .react-flow__edge-path {
-  stroke: rgba(185, 200, 230, 0.38) !important;
-}
-.react-flow__edge-text {
-  fill: rgba(255, 255, 255, 0.55) !important;
-  font-size: 11px !important;
-  font-weight: 800 !important;
-}
-.react-flow__edge-textbg { fill: rgba(0, 0, 0, 0.45) !important; }
-
-.react-flow__handle {
-  width: 10px !important;
-  height: 10px !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  background: rgba(0, 0, 0, 0.35) !important;
-}
-
-/* Nodes */
-.lg-node .react-flow__node-default,
-.lg-node.react-flow__node-default {
-  border-radius: 16px !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: rgba(255, 255, 255, 0.92) !important;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.26) !important;
-  padding: 10px 12px !important;
-}
-.lg-node--start .react-flow__node-default,
-.lg-node--start.react-flow__node-default {
-  border-color: rgba(0, 255, 160, 0.24) !important;
-  background: rgba(0, 255, 160, 0.08) !important;
-}
-.lg-node--end .react-flow__node-default,
-.lg-node--end.react-flow__node-default {
-  border-color: rgba(255, 90, 90, 0.26) !important;
-  background: rgba(255, 90, 90, 0.08) !important;
-}
-
-/* MiniMap */
-.react-flow__minimap {
-  border-radius: 16px !important;
-  overflow: hidden !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  background: rgba(0, 0, 0, 0.28) !important;
-  box-shadow: 0 12px 28px rgba(0,0,0,0.28) !important;
-}
-.react-flow__minimap-mask { fill: rgba(0, 0, 0, 0.50) !important; }
-.react-flow__minimap-node {
-  fill: rgba(255, 255, 255, 0.12) !important;
-  stroke: rgba(255, 255, 255, 0.18) !important;
-  stroke-width: 1px !important;
-}
-.react-flow__minimap-node.lg-node--start {
-  fill: rgba(0, 255, 160, 0.18) !important;
-  stroke: rgba(0, 255, 160, 0.28) !important;
-}
-.react-flow__minimap-node.lg-node--end {
-  fill: rgba(255, 90, 90, 0.18) !important;
-  stroke: rgba(255, 90, 90, 0.28) !important;
-}
-
-/* Controls: круглые кнопки + tooltip */
-.react-flow__controls {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  gap: 8px !important;
-}
-
-.react-flow__controls button {
-  position: relative;
-  width: 36px !important;
-  height: 36px !important;
-  padding: 0 !important;
-  border-radius: 999px !important;
-
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  background: rgba(255, 255, 255, 0.06) !important;
-
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    0 10px 22px rgba(0, 0, 0, 0.22) !important;
-
-  display: grid !important;
-  place-items: center !important;
-
-  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease, box-shadow 140ms ease !important;
-}
-
-.react-flow__controls button:hover {
-  background: rgba(255, 255, 255, 0.09) !important;
-  border-color: rgba(255, 255, 255, 0.20) !important;
-  transform: translateY(-1px) !important;
-}
-.react-flow__controls button:active {
-  transform: translateY(0px) scale(0.98) !important;
-}
-.react-flow__controls button[aria-pressed="true"] {
-  background: rgba(255, 255, 255, 0.12) !important;
-  border-color: rgba(185, 200, 230, 0.26) !important;
-  box-shadow:
-    0 0 0 3px rgba(185, 200, 230, 0.08),
-    0 12px 26px rgba(0,0,0,0.28) !important;
-}
-
-/* icons forced light */
-.react-flow__controls button svg {
-  width: 18px !important;
-  height: 18px !important;
-  display: block !important;
-  filter:
-    drop-shadow(0 1px 0 rgba(0,0,0,0.35))
-    drop-shadow(0 0 10px rgba(185,200,230,0.06));
-  opacity: 0.98 !important;
-}
-.react-flow__controls button svg path,
-.react-flow__controls button svg line,
-.react-flow__controls button svg polyline,
-.react-flow__controls button svg polygon,
-.react-flow__controls button svg circle,
-.react-flow__controls button svg rect {
-  fill: rgba(255, 255, 255, 0.90) !important;
-  stroke: rgba(255, 255, 255, 0.90) !important;
-}
-.react-flow__controls button:hover svg path,
-.react-flow__controls button:hover svg line,
-.react-flow__controls button:hover svg polyline,
-.react-flow__controls button:hover svg polygon,
-.react-flow__controls button:hover svg circle,
-.react-flow__controls button:hover svg rect {
-  fill: rgba(255, 255, 255, 0.98) !important;
-  stroke: rgba(255, 255, 255, 0.98) !important;
-}
-
-.react-flow__controls button:disabled {
-  opacity: 0.45 !important;
-  cursor: not-allowed !important;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-/* tooltip from data-tip, hide delay 1s */
-.react-flow__controls button::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 115%;
-  top: 50%;
-transform: translateY(-50%);
-white-space: nowrap;
-
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.72);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.25px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
-
-  opacity: 0;
-  pointer-events: none;
-
-  transition: opacity 120ms ease, transform 120ms ease;
-  transition-delay: 1s;
-}
-.react-flow__controls button::before {
-  content: "";
-  position: absolute;
-  left: 104%;
-  top: 50%;
-width: 10px;
-  height: 10px;
-  background: rgba(0, 0, 0, 0.72);
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  transform: translateY(-50%) rotate(45deg);
-opacity: 0;
-  pointer-events: none;
-
-  transition: opacity 120ms ease;
-  transition-delay: 1s;
-}
-.react-flow__controls button:hover::after,
-.react-flow__controls button:focus-visible::after {
-  opacity: 1;
-  transform: translateY(50%) translateX(2px);
-  transition-delay: 0s;
-}
-.react-flow__controls button:hover::before,
-.react-flow__controls button:focus-visible::before {
-  opacity: 1;
-  transition-delay: 0s;
-}
-.react-flow__controls button:disabled::after,
-.react-flow__controls button:disabled::before {
-  content: "";
-  display: none;
 }
 
 /* =========================================================
    Универсальный spinner + статус-плашка (для Run/Probe/etc.)
    ========================================================= */
-
 .spinner {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(255,255,255,0.28);
-  border-top-color: rgba(255,255,255,0.88);
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: rgba(255, 255, 255, 0.88);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   vertical-align: middle;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 
 .status-pill {
   display: inline-flex;
@@ -814,9 +895,9 @@ opacity: 0;
   gap: 8px;
   padding: 8px 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(0,0,0,0.14);
-  color: rgba(255,255,255,0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.14);
+  color: rgba(255, 255, 255, 0.86);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.2px;
@@ -825,311 +906,237 @@ opacity: 0;
 /* =========================
    SplitView (Run / Graph / Split)
    ========================= */
-.sv{
-  display:flex;
-  flex-direction:column;
-  height:100%;
-  min-height:0;
+.sv {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 
-  width:100%;
-  min-width:0;
-  flex:1;
-  align-self:stretch;
+  width: 100%;
+  min-width: 0;
+  flex: 1;
+  align-self: stretch;
 }
 
-.sv__toolbar{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  padding:10px 12px;
-  border:1px solid var(--border);
-  background: rgba(255,255,255,0.03);
+.sv__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
   border-radius: var(--radius);
-  box-shadow: 0 10px 24px rgba(0,0,0,0.22);
-  margin-bottom:12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  margin-bottom: 12px;
 }
 
-.sv__spacer{ flex:1; }
-
-.sv__hint{
-  opacity:.7;
-  font-size:12px;
-  user-select:none;
+.sv__spacer {
+  flex: 1;
 }
 
-.sv__mode{
-  appearance:none;
-  border:1px solid var(--accent-border);
-  background: rgba(255,255,255,0.04);
+.sv__hint {
+  opacity: 0.7;
+  font-size: 12px;
+  user-select: none;
+}
+
+.sv__mode {
+  appearance: none;
+  border: 1px solid var(--accent-border);
+  background: rgba(255, 255, 255, 0.04);
   color: var(--text);
   border-radius: 999px;
-  padding:6px 10px;
-  font-weight:600;
-  letter-spacing:.2px;
-  cursor:pointer;
-  transition: transform .08s ease, background .15s ease, border-color .15s ease;
-}
-
-.sv__mode:hover{
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.22);
-}
-
-.sv__mode:active{ transform: translateY(1px); }
-
-.sv__mode--active{
-  background: rgba(185,200,230,0.10);
-  border-color: rgba(185,200,230,0.30);
-}
-.sv__single{
-  flex:1;
-  min-height:0;
-  width:100%;
-  min-width:0;
-
-  display:flex;
-  flex-direction:column;
-  align-items:stretch;
-}
-.sv__single > *{
-  width:100%;
-  min-width:0;
-}
-
-.sv__split{
-  flex:1;
-  min-height:0;
-  display:flex;
-  align-items:stretch;
-  border-radius: var(--radius2);
-  overflow:hidden;
-  border:1px solid var(--border);
-  background: rgba(0,0,0,0.10);
-}
-
-.sv__pane{
-  min-height:0;
-  overflow:auto;
-}
-
-.sv__pane--left{ border-right: 1px solid rgba(255,255,255,0.06); }
-.sv__pane--right{ border-left: 1px solid rgba(255,255,255,0.06); }
-
-.sv__divider{
-  width:10px;
-  flex:0 0 10px;
-  cursor: col-resize;
-  background: rgba(255,255,255,0.02);
-  border-left: 1px solid rgba(255,255,255,0.08);
-  border-right: 1px solid rgba(255,255,255,0.08);
-  position: relative;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  user-select:none;
-}
-
-.sv__divider:hover{
-  background: rgba(255,255,255,0.04);
-}
-
-.sv__split[data-dragging="1"] .sv__divider{
-  background: rgba(185,200,230,0.08);
-  border-left-color: rgba(185,200,230,0.22);
-  border-right-color: rgba(185,200,230,0.22);
-}
-
-.sv__divider-grip{
-  width:3px;
-  height:44px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.22);
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.25) inset;
-}
-
-.sv__stack{
-  flex:1;
-  min-height:0;
-  display:flex;
-  flex-direction:column;
-  gap:10px;
-}
-
-.sv__stack-pane{
-  min-height:0;
-  overflow:auto;
-  border-radius: var(--radius2);
-  border:1px solid var(--border);
-  background: rgba(0,0,0,0.10);
-}
-
-
-
-/* =========================
-   Tooltips (design-consistent)
-   Use: data-tip="..."
-   ========================= */
-[data-tip]{
-  position: relative;
-}
-
-[data-tip]:hover{
-  z-index: 1000;
-}
-
-
-
-[data-tip=""]::after,
-[data-tip=""]::before{
-  display:none;
-}
-
-button:disabled[data-tip]::after,
-button:disabled[data-tip]::before{
-  display:none;
-}
-[data-tip]::after{
-  content: attr(data-tip);
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 10px);
-  transform: translateX(-50%);
-  white-space: nowrap;
-  pointer-events: none;
-
-padding: 8px 10px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(12,14,18,0.92);
-  color: rgba(255,255,255,0.90);
-  font-size: 12px;
-  font-weight: 650;
+  padding: 6px 10px;
+  font-weight: 600;
   letter-spacing: 0.2px;
-  box-shadow: 0 16px 34px rgba(0,0,0,0.45);
-  opacity: 0;
-  visibility: hidden;
-  transition: 140ms ease;
-  z-index: 9999;
+  cursor: pointer;
+  transition:
+    transform 0.08s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
-[data-tip]::before{
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: calc(100% + 4px);
+.sv__mode:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.sv__mode:active {
+  transform: translateY(1px);
+}
+
+.sv__mode--active {
+  background: rgba(185, 200, 230, 0.10);
+  border-color: rgba(185, 200, 230, 0.30);
+}
+
+.sv__single {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sv__single > * {
+  width: 100%;
+  min-width: 0;
+}
+
+.sv__split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  border-radius: var(--radius2);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.10);
+}
+
+.sv__pane {
+  min-height: 0;
+  overflow: auto;
+}
+
+.sv__pane--left {
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sv__pane--right {
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sv__divider {
   width: 10px;
-  height: 10px;
-  background: rgba(12,14,18,0.92);
-  border-left: 1px solid rgba(255,255,255,0.14);
-  border-top: 1px solid rgba(255,255,255,0.14);
-  transform: translateX(-50%) rotate(45deg);
-opacity: 0;
-  visibility: hidden;
-  transition: 140ms ease;
-  z-index: 9998;
+  flex: 0 0 10px;
+  cursor: col-resize;
+  background: rgba(255, 255, 255, 0.02);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
 }
 
-[data-tip]:hover::after,
-[data-tip]:hover::before{
-  opacity: 1;
-  visibility: visible;
+.sv__divider:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-@media (max-width: 980px){
-  [data-tip]::after,
-  [data-tip]::before{
-    display:none;
-  }
+.sv__split[data-dragging="1"] .sv__divider {
+  background: rgba(185, 200, 230, 0.08);
+  border-left-color: rgba(185, 200, 230, 0.22);
+  border-right-color: rgba(185, 200, 230, 0.22);
 }
 
+.sv__divider-grip {
+  width: 3px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
 
+.sv__stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sv__stack-pane {
+  min-height: 0;
+  overflow: auto;
+  border-radius: var(--radius2);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.10);
+}
 
 /* =========================
    Run header toolbar
    ========================= */
-.runhdr{
-  display:flex;
-  align-items:center;
-  gap:10px;
+.runhdr {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 4px;
 }
-.runhdr__subtitle{
+
+.runhdr__subtitle {
   font-size: 12px;
   opacity: 0.65;
   margin-left: 6px;
 }
-.runhdr__spacer{ flex: 1; }
-.runhdr__meta{
-  display:flex;
-  align-items:center;
+
+.runhdr__spacer {
+  flex: 1;
+}
+
+.runhdr__meta {
+  display: flex;
+  align-items: center;
   gap: 8px;
   opacity: 0.86;
 }
-.runhdr__dot{ opacity: 0.55; }
-.runhdr__actions{
-  display:flex;
-  align-items:center;
+
+.runhdr__dot {
+  opacity: 0.55;
+}
+
+.runhdr__actions {
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
-.runhdr__icon{
-padding: 0 !important;
+
+.runhdr__icon {
+  padding: 0 !important;
   line-height: 0;
   width: 34px;
   height: 34px;
   border-radius: 12px;
-  display:grid;
-  place-items:center;
+  display: grid;
+  place-items: center;
   font-size: 14px;
-  padding: 0;
-  line-height: 0;
 }
 
+.runhdr__icon svg {
+  display: block;
+}
 
-.fold{
+.fold {
   margin-top: 10px;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 14px;
-  background: rgba(0,0,0,0.08);
+  background: rgba(0, 0, 0, 0.08);
   padding: 8px;
 }
-.fold__sum{
+
+.fold__sum {
   cursor: pointer;
   user-select: none;
   list-style: none;
   font-weight: 650;
   letter-spacing: 0.2px;
-  color: rgba(255,255,255,0.84);
+  color: rgba(255, 255, 255, 0.84);
 }
-.fold__sum::-webkit-details-marker{ display:none; }
 
-
-.runhdr__icon svg{ display:block; }
-
-/* Run header icon tooltips: show below to avoid overlap with top bars */
-.runhdr__icon[data-tip]::after{
-  top: calc(100% + 10px);
-  bottom: auto;
-}
-.runhdr__icon[data-tip]::before{
+.fold__sum::-webkit-details-marker {
   display: none;
 }
-
-/* Run header tooltips: always show below, no arrow */
-.runhdr [data-tip]::after{
-  top: calc(100% + 10px);
-  bottom: auto;
-}
-.runhdr [data-tip]::before{
-  display: none;
-}
-
 
 /* Run header: Run↔Split toggle */
-.runhdr__toggle{
+.runhdr__toggle {
   appearance: none;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.05);
-  color: rgba(255,255,255,0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.86);
   border-radius: 999px;
   padding: 6px 10px;
   font-weight: 700;
@@ -1137,258 +1144,12 @@ padding: 0 !important;
   cursor: pointer;
   transition: 140ms ease;
 }
-.runhdr__toggle:hover{
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.22);
-}
-.runhdr__toggle:active{ transform: translateY(1px); }
 
-
-/* ReactFlow attribution (bottom-right link) — убрать */
-.react-flow__attribution { display: none !important; }
-
-
-
-/* ReactFlow Controls tooltip override (must be AFTER global [data-tip]) */
-.react-flow__controls button[data-tip]::after{
-  content: attr(data-tip);
-  position: absolute;
-  left: 115%;
-  top: 50%;
-  transform: translateY(-50%);
-  white-space: nowrap;
-
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(0, 0, 0, 0.72);
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 12px;
-  font-weight: 650;
-  letter-spacing: 0.25px;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
-
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease, transform 120ms ease;
-  transition-delay: 0.15s;
-  z-index: 9999;
+.runhdr__toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
-.react-flow__controls button[data-tip]::before{
-  content: "";
-  position: absolute;
-  left: 104%;
-  top: 50%;
-  width: 10px;
-  height: 10px;
-  background: rgba(0, 0, 0, 0.72);
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
-  transform: translateY(-50%) rotate(45deg);
-
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-  transition-delay: 0.15s;
-  z-index: 9998;
+.runhdr__toggle:active {
+  transform: translateY(1px);
 }
-
-.react-flow__controls button[data-tip]:hover::after,
-.react-flow__controls button[data-tip]:focus-visible::after{
-  opacity: 1;
-  transform: translateY(-50%) translateX(2px);
-  transition-delay: 0s;
-}
-.react-flow__controls button[data-tip]:hover::before,
-.react-flow__controls button[data-tip]:focus-visible::before{
-  opacity: 1;
-  transition-delay: 0s;
-}
-
-/* Если кнопка disabled — не показываем */
-.react-flow__controls button:disabled::after,
-.react-flow__controls button:disabled::before{
-  display: none !important;
-}
-
-
-/* GraphBar: unify controls sizes (select + Refresh) */
-.graphbar__controls .fselect{
-  height: 42px;
-  font-size: 13px;
-  font-weight: 520;
-  letter-spacing: 0.25px;
-}
-
-.graphbar__controls .secondary-btn{
-  height: 42px;
-  padding: 0 12px;          /* как у fselect */
-  font-size: 13px;          /* как у fselect */
-  font-weight: 520;         /* как у fselect */
-  letter-spacing: 0.25px;   /* как у fselect */
-  line-height: 42px;        /* чтобы текст сидел ровно по центру */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* GraphBar: Refresh should look identical to fselect (final override) */
-.graphbar__controls .secondary-btn{
-  font-weight: 520 !important;
-  font-size: 13px !important;
-  letter-spacing: 0.25px !important;
-
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  background: rgba(0,0,0,0.20) !important;
-
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 10px 22px rgba(0,0,0,0.18) !important;
-
-  border-radius: 12px !important; /* как у fselect */
-}
-
-.graphbar__controls .secondary-btn:hover{
-  background: rgba(0,0,0,0.26) !important;
-  border-color: rgba(255,255,255,0.16) !important;
-}
-
-
-/* GraphBar: hard-align LR select + Refresh (same geometry) */
-.graphbar__controls .fselect,
-.graphbar__controls .secondary-btn{
-  height: 42px !important;
-  border-radius: 18px !important; /* сделаем как на скрине “пилюли” одинаковые */
-  border: 1px solid rgba(255,255,255,0.12) !important;
-  background: rgba(0,0,0,0.20) !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 10px 22px rgba(0,0,0,0.18) !important;
-
-  font-size: 13px !important;
-  font-weight: 520 !important;
-  letter-spacing: 0.25px !important;
-}
-
-.graphbar__controls .secondary-btn{
-  padding: 0 18px !important; /* визуально как у селекта */
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-}
-
-/* одинаковая ширина — чтобы смотрелось “как пара” */
-.graphbar__controls .field{ width: 420px !important; }
-.graphbar__controls .secondary-btn{ width: 420px !important; }
-
-/* hover одинаковый */
-.graphbar__controls .fselect:hover,
-.graphbar__controls .secondary-btn:hover{
-  background: rgba(0,0,0,0.26) !important;
-  border-color: rgba(255,255,255,0.16) !important;
-}
-
-
-/* GraphBar: cancel full-width hacks; left = content width, right = measured width */
-.graphbar__controls .field{ width: auto !important; }
-.graphbar__controls .secondary-btn{ width: auto !important; }
-
-/* RailButton: tiny vertical padding tweak */
-.rail-btn{
-  padding-top: 1px !important;
-  padding-bottom: 1px !important;
-}
-
-
-/* Drawer titles: make them look like rail buttons (visual pill) */
-.drawer__title{
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 6px 10px;                 /* компактно как rail */
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.04);
-
-  color: rgba(255,255,255,0.82);
-  font-size: 12px;
-  font-weight: 520;
-  letter-spacing: 0.30px;
-
-  box-shadow: 0 8px 22px rgba(0,0,0,0.22);
-}
-
-/* Align header spacing so the pill sits nicely */
-.drawer__header{
-  gap: 10px;
-}
-
-
-/* Rail buttons: make them less tall (narrower height) */
-.rail-btn{
-  min-height: 72px !important;
-  padding: 4px 6px !important;
-}
-
-
-/* Rail buttons: reduce inner top/bottom air around vertical text */
-.rail-btn{
-  min-height: 58px !important;
-  padding: 0 !important;
-}
-
-.rail-btn__text{
-  font-size: 11px !important;
-  line-height: 1 !important;
-  padding: 0 !important;
-}
-
-/* Rail buttons: match tabs (Run/Graph/History/State): lower height, normal readable text */
-.rail-btn{
-  min-height: 52px !important;
-  padding: 0 !important;              /* убираем лишний воздух сверху/снизу */
-}
-
-.rail-btn__text{
-  font-size: 12px !important;         /* как табы */
-  font-weight: 520 !important;
-  letter-spacing: 0.25px !important;
-  line-height: 1.15 !important;
-}
-
-
-/* =========================================
-   Graph: nodes text MUCH bigger + less vertical padding
-   ========================================= */
-
-/* Default node body */
-.react-flow__node-default{
-  padding: 4px 12px !important;   /* почти до верха/низа */
-  font-size: 28px !important;     /* ~в 2 раза крупнее */
-  line-height: 1.05 !important;
-}
-
-/* Fallbacks for various internals */
-.react-flow__node-default .react-flow__node-default__label,
-.react-flow__node-default .react-flow__node-default__content,
-.react-flow__node-default .react-flow__node-default__body,
-.react-flow__node-default .react-flow__node-default__text,
-.react-flow__node-default .react-flow__node-default__title{
-  font-size: 28px !important;
-  line-height: 1.05 !important;
-}
-
-/* Edge labels (text on lines) bigger */
-.react-flow__edge-text{
-  font-size: 22px !important;
-  font-weight: 900 !important;
-}
-
-/* Edge label background a bit larger to match bigger text */
-.react-flow__edge-textbg{
-  fill: rgba(0, 0, 0, 0.52) !important;
-}
-

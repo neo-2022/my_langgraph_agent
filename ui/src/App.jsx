@@ -267,7 +267,16 @@ function RailButton({ active, onClick, children, tip }) {
         onBlur={() => setOpen(false)}
         aria-label={tip || ""}
       >
-        <span className="rail-btn__text">{children}</span>
+        <span className="rail-btn__text">
+          {String(children)
+            .split("\n")
+            .map((s, i, arr) => (
+              <span key={i}>
+                {s}
+                {i < arr.length - 1 ? <br /> : null}
+              </span>
+            ))}
+        </span>
       </button>
       {tooltip}
     </>
@@ -547,6 +556,7 @@ useEffect(() => {
 }, [debugOpen, refreshDbg0Snap]);
 
 // Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
+// Требование: хоткей открывает аварийный Level 0 overlay (до/вне React), а не только боковую панель.
 useEffect(() => {
   const onKeyDown = (e) => {
     const code = String(e?.code || "");
@@ -554,6 +564,13 @@ useEffect(() => {
     const isE = code === "KeyE" || key === "e";
     if (e?.altKey && e?.ctrlKey && isE) {
       e.preventDefault();
+      // Приоритет: Level 0 overlay (window.__DBG0__)
+      const t = window.__DBG0__?.toggle;
+      if (typeof t === "function") {
+        t();
+        return;
+      }
+      // Fallback: открыть/закрыть боковую панель Debugger (Level 1)
       setDebugOpen((v) => !v);
     }
   };
@@ -996,6 +1013,13 @@ const apiTone = useMemo(() => {
             {p.title}
           </RailButton>
         ))}
+        <RailButton
+          active={debugOpen}
+          onClick={() => setDebugOpen((v) => !v)}
+          tip="Отладчик (Alt+Ctrl+E)"
+        >
+          Debug
+        </RailButton>
       </div>
     </nav>
   );
@@ -1477,16 +1501,6 @@ const apiTone = useMemo(() => {
           </div>
 
           <div className="topbar__spacer" />
-
-          <button
-            type="button"
-            className="ghost-link"
-            onClick={() => setDebugOpen((v) => !v)}
-            data-tip="Отладчик (Alt+Ctrl+E)"
-            aria-label="Отладчик (Alt+Ctrl+E)"
-          >
-            Debug
-          </button>
 
           <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
             API Docs

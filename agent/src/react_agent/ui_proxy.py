@@ -39,6 +39,13 @@ LANGGRAPH_TMUX_CMD = os.environ.get(
     "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && langgraph dev --no-browser",
 )
 
+# Команда запуска UI Proxy (tmux session ui_proxy)
+UI_PROXY_TMUX_CMD = os.environ.get(
+    "UI_PROXY_TMUX_CMD",
+    "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && UI_PROXY_PORT=8090 python -m uvicorn react_agent.ui_proxy:app --host 127.0.0.1 --port 8090",
+)
+
+
 # Кэш probe (чтобы не мучить большие модели постоянно)
 PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
 _PROBE_CACHE: Dict[str, Dict[str, Any]] = {}  # model -> { ok: bool, ts: float, raw: dict }
@@ -117,6 +124,29 @@ def _tmux_has_session(name: str) -> bool:
     return p.returncode == 0
 
 
+def _http_health(url: str) -> Dict[str, Any]:
+    try:
+        r = httpx.get(url, timeout=2.0)
+        return {"ok": bool(r.status_code == 200), "status_code": int(r.status_code)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _tmux_stop_session(name: str) -> Dict[str, Any]:
+    if not _tmux_has_session(name):
+        return {"ok": False, "error": f"tmux-сессия {name} не найдена"}
+    subprocess.run(["tmux", "send-keys", "-t", name, "C-c"], check=False)
+    return {"ok": True}
+
+
+def _tmux_start_session(name: str, cmd: str) -> Dict[str, Any]:
+    if not _tmux_has_session(name):
+        subprocess.run(["tmux", "new-session", "-d", "-s", name, cmd], check=False)
+        return {"ok": True, "created": True}
+    subprocess.run(["tmux", "send-keys", "-t", name, cmd, "Enter"], check=False)
+    return {"ok": True, "created": False}
+
+
 def _tmux_restart_langgraph() -> Dict[str, Any]:
     """
     Простыми словами: "остановить и снова запустить LangGraph сервер, который сидит в tmux".
@@ -134,6 +164,38 @@ def _tmux_restart_langgraph() -> Dict[str, Any]:
 
     return {"ok": True}
 
+
+
+def _langgraph_health() -> Dict[str, Any]:
+    """
+    Пытаемся понять, жив ли LangGraph по HTTP.
+    """
+    url = LANGGRAPH_BASE_URL.rstrip("/") + "/openapi.json"
+    try:
+        r = httpx.get(url, timeout=2.0)
+        return {"ok": bool(r.status_code == 200), "status_code": int(r.status_code)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _tmux_stop_langgraph() -> Dict[str, Any]:
+    if not _tmux_has_session("langgraph"):
+        return {"ok": False, "error": "tmux-сессия langgraph не найдена"}
+    subprocess.run(["tmux", "send-keys", "-t", "langgraph", "C-c"], check=False)
+    return {"ok": True}
+
+
+def _tmux_start_langgraph() -> Dict[str, Any]:
+    """
+    Запускаем LangGraph в tmux-сессии langgraph.
+    Если сессии нет — создаём.
+    Если есть — отправляем команду запуска.
+    """
+    if not _tmux_has_session("langgraph"):
+        subprocess.run(["tmux", "new-session", "-d", "-s", "langgraph", LANGGRAPH_TMUX_CMD], check=False)
+        return {"ok": True, "created": True}
+    subprocess.run(["tmux", "send-keys", "-t", "langgraph", LANGGRAPH_TMUX_CMD, "Enter"], check=False)
+    return {"ok": True, "created": False}
 
 # ---------- /ui endpoints ----------
 
@@ -179,6 +241,63 @@ async def ui_set_model(payload: Dict[str, Any]) -> Dict[str, Any]:
 @app.post("/ui/restart-langgraph")
 def ui_restart_langgraph() -> Dict[str, Any]:
     return _tmux_restart_langgraph()
+
+
+@app.get("/ui/langgraph/status")
+def ui_langgraph_status() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "tmux_session": _tmux_has_session("langgraph"),
+        "health": _langgraph_health(),
+        "base_url": LANGGRAPH_BASE_URL,
+    }
+
+
+@app.post("/ui/langgraph/stop")
+def ui_langgraph_stop() -> Dict[str, Any]:
+    return _tmux_stop_langgraph()
+
+
+@app.post("/ui/langgraph/start")
+def ui_langgraph_start() -> Dict[str, Any]:
+    return _tmux_start_langgraph()
+
+
+@app.get("/ui/ui-proxy/status")
+def ui_ui_proxy_status() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "tmux_session": _tmux_has_session("ui_proxy"),
+        "health": _http_health(f"http://{PROXY_HOST}:{PROXY_PORT}/health"),
+        "base_url": f"http://{PROXY_HOST}:{PROXY_PORT}",
+    }
+
+
+@app.post("/ui/ui-proxy/start")
+def ui_ui_proxy_start() -> Dict[str, Any]:
+    # стартуем ui_proxy в tmux (вызов может быть из внешнего процесса, не из текущего ui_proxy)
+    return _tmux_start_session("ui_proxy", UI_PROXY_TMUX_CMD)
+
+
+@app.post("/ui/ui-proxy/stop")
+def ui_ui_proxy_stop() -> Dict[str, Any]:
+    # Пытаемся ответить до остановки: делаем stop через shell с небольшой задержкой
+    subprocess.Popen(["bash", "-lc", "sleep 0.2; tmux send-keys -t ui_proxy C-c"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True}
+
+
+@app.get("/ui/react-ui/status")
+def ui_react_ui_status() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "tmux_session": _tmux_has_session("ui"),
+        "health": _http_health("http://127.0.0.1:5174/"),
+        "base_url": "http://127.0.0.1:5174",
+    }
+
+
+
+
 
 
 @app.post("/ui/probe-tool-calls")

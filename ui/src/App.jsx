@@ -4,6 +4,7 @@ import "./App.css";
 import "reactflow/dist/style.css";
 import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
+import { getUiErrorCore } from "./debugger/core.js";
 
 function TabButton({ active, onClick, children }) {
   const en = String(children ?? "").trim();
@@ -539,52 +540,68 @@ export default function App() {
 
   const [focusNodeId, setFocusNodeId] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
-const [dbg0Snap, setDbg0Snap] = useState(null);
-const [dbgCopyOk, setDbgCopyOk] = useState(false);
-const [dbgRefreshOk, setDbgRefreshOk] = useState(false);
-const refreshDbg0Snap = useCallback(() => {
-  try {
-    const snap = window.__DBG0__?.snapshot?.() ?? null;
-    setDbg0Snap(snap);
-  } catch {
-    setDbg0Snap(null);
-  }
-}, []);
 
-useEffect(() => {
-  if (debugOpen) refreshDbg0Snap();
-}, [debugOpen, refreshDbg0Snap]);
+  // Debugger Level 1 Core (UiError)
+  const uiErrCore = useMemo(() => getUiErrorCore({ capacity: 200 }), []);
 
-// Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
-// Требование: хоткей открывает аварийный Level 0 overlay (до/вне React), а не только боковую панель.
-useEffect(() => {
-  const onKeyDown = (e) => {
-    const code = String(e?.code || "");
-    const key = String(e?.key || "").toLowerCase();
-    const isE = code === "KeyE" || key === "e";
-    if (e?.altKey && e?.ctrlKey && isE) {
-      e.preventDefault();
-      // Приоритет: Level 0 overlay (window.__DBG0__)
-      const t = window.__DBG0__?.toggle;
-      if (typeof t === "function") {
-        t();
-        return;
-      }
-      // Fallback: открыть/закрыть боковую панель Debugger (Level 1)
-      setDebugOpen((v) => !v);
+  // Auto-open Debugger panel on error/fatal
+  useEffect(() => {
+    const unsub = uiErrCore.subscribe((err) => {
+      const sev = String(err?.severity || "");
+      if (sev === "error" || sev === "fatal") setDebugOpen(true);
+    });
+    return () => {
+      try { unsub(); } catch {}
+    };
+  }, [uiErrCore]);
+
+  const [dbg0Snap, setDbg0Snap] = useState(null);
+  const [dbgCopyOk, setDbgCopyOk] = useState(false);
+  const [dbgRefreshOk, setDbgRefreshOk] = useState(false);
+
+  const refreshDbg0Snap = useCallback(() => {
+    try {
+      const snap = window.__DBG0__?.snapshot?.() ?? null;
+      setDbg0Snap(snap);
+    } catch {
+      setDbg0Snap(null);
     }
-  };
-  // capture=true: хоткей должен срабатывать даже при фокусе в input/textarea
-  window.addEventListener("keydown", onKeyDown, true);
-  return () => window.removeEventListener("keydown", onKeyDown, true);
-}, []);
+  }, []);
 
-const [openPanels, setOpenPanels] = useState(["general"]);
+  useEffect(() => {
+    if (debugOpen) refreshDbg0Snap();
+  }, [debugOpen, refreshDbg0Snap]);
 
-const [apiStatus, setApiStatus] = useState("не проверял");
-const [apiError, setApiError] = useState("");
+  // Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
+  // Требование: хоткей открывает аварийный Level 0 overlay (до/вне React), а не только боковую панель.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const code = String(e?.code || "");
+      const key = String(e?.key || "").toLowerCase();
+      const isE = code === "KeyE" || key === "e";
+      if (e?.altKey && e?.ctrlKey && isE) {
+        e.preventDefault();
+        // Приоритет: Level 0 overlay (window.__DBG0__)
+        const t = window.__DBG0__?.toggle;
+        if (typeof t === "function") {
+          t();
+          return;
+        }
+        // Fallback: открыть/закрыть боковую панель Debugger (Level 1)
+        setDebugOpen((v) => !v);
+      }
+    };
+    // capture=true: хоткей должен срабатывать даже при фокусе в input/textarea
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
-const apiTone = useMemo(() => {
+  const [openPanels, setOpenPanels] = useState(["general"]);
+
+  const [apiStatus, setApiStatus] = useState("не проверял");
+  const [apiError, setApiError] = useState("");
+
+  const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
     if (String(apiStatus).toLowerCase().includes("ошибка")) return "bad";
     return "neutral";
@@ -867,6 +884,137 @@ const apiTone = useMemo(() => {
     }
   };
 
+
+  // LangGraph service control (через ui_proxy)
+  const [lgStatus, setLgStatus] = useState(null);
+  const [lgBusy, setLgBusy] = useState(false);
+  const [lgError, setLgError] = useState("");
+
+  const refreshLanggraphStatus = useCallback(async () => {
+    setLgError("");
+    try {
+      const s = await getJson("/ui/langgraph/status");
+      setLgStatus(s);
+      return s;
+    } catch (e) {
+      setLgError(String(e?.message || e));
+      setLgStatus(null);
+      return null;
+    }
+  }, []);
+
+  // Poll until фактическое состояние сменится (ON/OFF), иначе индикатор не трогаем.
+  const pollLanggraphUntil = useCallback(
+    async (wantOn) => {
+      const max = 20; // ~10s при 500ms
+      for (let i = 0; i < max; i++) {
+        const s = await refreshLanggraphStatus();
+        const isOn = !!(s?.health?.ok);
+        if (wantOn ? isOn : !isOn) return s;
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      return await refreshLanggraphStatus();
+    },
+    [refreshLanggraphStatus]
+  );
+
+  const langgraphStop = useCallback(async () => {
+    setLgBusy(true);
+    setLgError("");
+    try {
+      const out = await postJson("/ui/langgraph/stop", {});
+      if (!out?.ok) throw new Error(out?.error || "Не удалось остановить LangGraph");
+      await pollLanggraphUntil(false);
+    } catch (e) {
+      setLgError(String(e?.message || e));
+    } finally {
+      setLgBusy(false);
+    }
+  }, [pollLanggraphUntil]);
+
+  const langgraphStart = useCallback(async () => {
+    setLgBusy(true);
+    setLgError("");
+    try {
+      const out = await postJson("/ui/langgraph/start", {});
+      if (!out?.ok) throw new Error(out?.error || "Не удалось запустить LangGraph");
+      await pollLanggraphUntil(true);
+    } catch (e) {
+      setLgError(String(e?.message || e));
+    } finally {
+      setLgBusy(false);
+    }
+  }, [pollLanggraphUntil]);
+
+  // Авто-обновление статуса, пока открыт "Общее"
+  useEffect(() => {
+    if (!openPanels.includes("general")) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+      await refreshLanggraphStatus();
+    };
+
+    tick();
+    const t = window.setInterval(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [openPanels, refreshLanggraphStatus]);
+
+
+  // UI Proxy service control (status only; индикатор строго "по факту")
+  const [uiProxyStatus, setUiProxyStatus] = useState(null);
+  const [uiProxyError, setUiProxyError] = useState("");
+
+  const refreshUiProxyStatus = useCallback(async () => {
+    setUiProxyError("");
+    try {
+      const s = await getJson("/ui/ui-proxy/status");
+      setUiProxyStatus(s);
+      return s;
+    } catch (e) {
+      setUiProxyError(String(e?.message || e));
+      setUiProxyStatus(null);
+      return null;
+    }
+  }, []);
+
+  // React UI service control (status only; индикатор строго "по факту")
+  const [reactUiStatus, setReactUiStatus] = useState(null);
+  const [reactUiError, setReactUiError] = useState("");
+
+  const refreshReactUiStatus = useCallback(async () => {
+    setReactUiError("");
+    try {
+      const s = await getJson("/ui/react-ui/status");
+      setReactUiStatus(s);
+      return s;
+    } catch (e) {
+      setReactUiError(String(e?.message || e));
+      setReactUiStatus(null);
+      return null;
+    }
+  }, []);
+
+
+  // Авто-обновление статусов UI Proxy + React UI, пока открыт "Общее"
+  useEffect(() => {
+    if (!openPanels.includes("general")) return;
+
+    refreshUiProxyStatus();
+    refreshReactUiStatus();
+
+    const t = window.setInterval(() => {
+      refreshUiProxyStatus();
+      refreshReactUiStatus();
+    }, 1500);
+
+    return () => window.clearInterval(t);
+  }, [openPanels, refreshUiProxyStatus, refreshReactUiStatus]);
+
   const stopRun = () => {
     try {
       abortRef.current?.abort?.();
@@ -974,8 +1122,25 @@ const apiTone = useMemo(() => {
     } catch (e) {
       if (String(e?.name) === "AbortError") {
         setRunStreamError("Остановлено пользователем.");
+        try {
+          uiErrCore.push(e, {
+            source: "run",
+            severity: "warn",
+            message: "Остановлено пользователем.",
+            context: { where: "runStream" },
+          });
+        } catch {}
       } else {
-        setRunStreamError(String(e?.message || e));
+        const msg = String(e?.message || e);
+        setRunStreamError(msg);
+        try {
+          uiErrCore.push(e, {
+            source: "run",
+            severity: "error",
+            message: msg,
+            context: { where: "runStream" },
+          });
+        } catch {}
       }
     } finally {
       setRunRunning(false);
@@ -1034,7 +1199,32 @@ const apiTone = useMemo(() => {
                 <div className="sidebar__section-title">Сервисы</div>
 
                 <div className="kv">
-                  <div className="kv__k">LangGraph</div>
+                  <div
+                    className="kv__k"
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Включить/выключить LangGraph"
+                    onClick={async () => {
+                      if (lgBusy) return;
+                      const s = await refreshLanggraphStatus();
+                      const isOn = !!(s?.health?.ok);
+                      if (isOn) await langgraphStop();
+                      else await langgraphStart();
+                    }}
+                    onKeyDown={async (e) => {
+                      if (lgBusy) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        const s = await refreshLanggraphStatus();
+                        const isOn = !!(s?.health?.ok);
+                        if (isOn) await langgraphStop();
+                        else await langgraphStart();
+                      }
+                    }}
+                    style={{ cursor: lgBusy ? "default" : "pointer" }}
+                  >
+                    LangGraph
+                  </div>
                   <div className="kv__v">
                     <a
                       href="http://127.0.0.1:2024/docs"
@@ -1043,12 +1233,24 @@ const apiTone = useMemo(() => {
                     >
                       127.0.0.1:2024
                     </a>
-                    <Badge tone="good">ON</Badge>
+                    <Badge tone={lgStatus?.health?.ok ? "good" : lgStatus ? "bad" : "neutral"}>
+                      {lgStatus?.health?.ok ? "ON" : lgStatus ? "OFF" : "…"}
+                    </Badge>
                   </div>
+                  {lgError ? <div className="error">{lgError}</div> : null}
                 </div>
 
                 <div className="kv">
-                  <div className="kv__k">UI Proxy</div>
+                  <div className="kv__k">
+                    <a
+                      href="http://127.0.0.1:8090/health"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      UI Proxy
+                    </a>
+                  </div>
                   <div className="kv__v">
                     <a
                       href="http://127.0.0.1:8090/health"
@@ -1057,18 +1259,54 @@ const apiTone = useMemo(() => {
                     >
                       127.0.0.1:8090
                     </a>
-                    <Badge tone="good">ON</Badge>
+                    <Badge
+                      tone={uiProxyStatus?.health?.ok ? "good" : uiProxyStatus ? "bad" : "neutral"}
+                    >
+                      {uiProxyStatus?.health?.ok ? "ON" : uiProxyStatus ? "OFF" : "…"}
+                    </Badge>
                   </div>
+                  {uiProxyError ? <div className="error">{uiProxyError}</div> : null}
                 </div>
 
                 <div className="kv">
                   <div className="kv__k">React UI</div>
-                  <div className="kv__v">
-                    <span className="mono">127.0.0.1:5174</span>
-                    <Badge tone="good">ON</Badge>
+                  <div className="kv__v" style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                    <Badge
+                      tone={reactUiStatus?.health?.ok ? "good" : reactUiStatus ? "bad" : "neutral"}
+                    >
+                      {reactUiStatus?.health?.ok ? "ON" : reactUiStatus ? "OFF" : "…"}
+                    </Badge>
+
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Проверить API"
+                      onClick={checkApi}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          checkApi();
+                        }
+                      }}
+                      style={{ cursor: "pointer", opacity: 0.9 }}
+                    >
+                      API
+                    </span>
+
+                    <Badge tone={apiTone}>
+                      {String(apiStatus).startsWith("OK")
+                        ? "OK"
+                        : String(apiStatus).toLowerCase().includes("ошибка")
+                        ? "OFF"
+                        : "…"}
+                    </Badge>
                   </div>
+                  {reactUiError ? <div className="error">{reactUiError}</div> : null}
+                  {apiError ? <div className="error">{apiError}</div> : null}
                 </div>
               </div>
+
+                {apiError ? <div className="error">{apiError}</div> : null}
 
               <div className="sidebar__section">
                 <div className="sidebar__section-title">Assistant</div>
@@ -1092,29 +1330,6 @@ const apiTone = useMemo(() => {
                 {assistantErr ? <div className="error">{assistantErr}</div> : null}
               </div>
 
-              <div className="sidebar__section">
-                <div className="sidebar__section-title">API</div>
-
-                <button className="secondary-btn" type="button" onClick={checkApi}>
-                  Проверить API
-                </button>
-
-                <div className="hint">
-                  Статус:{" "}
-                  <Badge tone={apiTone}>
-                    {String(apiStatus).startsWith("OK")
-                      ? "OK"
-                      : String(apiStatus).toLowerCase().includes("ошибка")
-                      ? "OFF"
-                      : "…"}
-                  </Badge>
-                  <span className="mono" style={{ marginLeft: 8, opacity: 0.85 }}>
-                    {apiStatus}
-                  </span>
-                </div>
-
-                {apiError ? <div className="error">{apiError}</div> : null}
-              </div>
             </PanelShell>
           );
         }
@@ -1703,29 +1918,28 @@ const apiTone = useMemo(() => {
                 </div>
               }
               right={
-  <div className="graph-host">
-    <GraphView
-                  assistantId={assistantId}
-                  focusNodeId={focusNodeId}
-                  onNodeSelected={setFocusNodeId}
-                />
-  </div>
-}
+                <div className="graph-host">
+                  <GraphView
+                    assistantId={assistantId}
+                    focusNodeId={focusNodeId}
+                    onNodeSelected={setFocusNodeId}
+                  />
+                </div>
+              }
             />
           )}
 
-
-            {tab === "graph" && (
-  <div className="graph-host">
-    <GraphView
+          {tab === "graph" && (
+            <div className="graph-host">
+              <GraphView
                 assistantId={assistantId}
                 focusNodeId={focusNodeId}
                 onNodeSelected={setFocusNodeId}
               />
-  </div>
-)}
+            </div>
+          )}
 
-            {tab === "history" && (
+          {tab === "history" && (
             <div className="card">
               <h2>History</h2>
               <p className="muted">История runs/threads + повтор запуска.</p>

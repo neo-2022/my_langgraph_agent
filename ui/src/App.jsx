@@ -546,25 +546,28 @@ useEffect(() => {
   if (debugOpen) refreshDbg0Snap();
 }, [debugOpen, refreshDbg0Snap]);
 
+// Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
+useEffect(() => {
+  const onKeyDown = (e) => {
+    const code = String(e?.code || "");
+    const key = String(e?.key || "").toLowerCase();
+    const isE = code === "KeyE" || key === "e";
+    if (e?.altKey && e?.ctrlKey && isE) {
+      e.preventDefault();
+      setDebugOpen((v) => !v);
+    }
+  };
+  // capture=true: хоткей должен срабатывать даже при фокусе в input/textarea
+  window.addEventListener("keydown", onKeyDown, true);
+  return () => window.removeEventListener("keydown", onKeyDown, true);
+}, []);
 
-  // Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      const key = String(e?.key || "").toLowerCase();
-      if (e?.altKey && e?.ctrlKey && key === "e") {
-        e.preventDefault();
-        setDebugOpen((v) => !v);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-  const [openPanels, setOpenPanels] = useState(["general"]);
+const [openPanels, setOpenPanels] = useState(["general"]);
 
-  const [apiStatus, setApiStatus] = useState("не проверял");
-  const [apiError, setApiError] = useState("");
+const [apiStatus, setApiStatus] = useState("не проверял");
+const [apiError, setApiError] = useState("");
 
-  const apiTone = useMemo(() => {
+const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
     if (String(apiStatus).toLowerCase().includes("ошибка")) return "bad";
     return "neutral";

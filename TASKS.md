@@ -92,6 +92,32 @@
 
 ---
 
+## Этап T — Tray (внешняя панель управления) — позже (после стабилизации B2.0)
+
+Цель: внешняя “основная” панель, не зависящая от React UI (5174) и не умирающая вместе с UI Proxy.
+
+Требования (зафиксировано):
+- UI Proxy: управлять можно **только** из внешней панели (внутри React UI — только статус), потому что выключение ui_proxy ломает канал управления `/ui/*`.
+- React UI: достаточно **Restart** (Start/Stop не обязательно в MVP трея).
+- Цвета/приоритет:
+  - если ui_proxy OFF → индикатор в трее всегда **красный** (приятный/неяркий оттенок, конкретную иконку выберет Артём).
+- “Last error”:
+  - показывать **отдельным пунктом меню** “Last error…” (не в tooltip).
+- Tooltip: короткий, только статусы (пример): `LG:ON | PX:ON | UI:ON`.
+- Действия меню (MVP):
+  - Restart all (langgraph + ui_proxy + ui)
+  - LangGraph: Start / Stop / Restart
+  - UI Proxy: Start / Stop / Restart
+  - React UI: Restart
+  - Open: UI / API Docs / UI Proxy health
+  - Logs: tail (langgraph / ui_proxy / ui) из tmux
+
+Техническая основа (уже подготовлено):
+- В ui_proxy есть endpoints статусов/управления:
+  - `/ui/langgraph/status|start|stop`
+  - `/ui/ui-proxy/status|start|stop`
+  - `/ui/react-ui/status|start|stop`
+
 ## Этап B3 — Backend события (настоящие spans)
 - [ ] Эндпоинт/стрим событий: node_start/end, tool_start/end, edge_chosen
 - [ ] span_id + parent_span_id

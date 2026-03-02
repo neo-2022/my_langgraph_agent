@@ -530,6 +530,22 @@ export default function App() {
 
   const [focusNodeId, setFocusNodeId] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
+const [dbg0Snap, setDbg0Snap] = useState(null);
+const [dbgCopyOk, setDbgCopyOk] = useState(false);
+const [dbgRefreshOk, setDbgRefreshOk] = useState(false);
+const refreshDbg0Snap = useCallback(() => {
+  try {
+    const snap = window.__DBG0__?.snapshot?.() ?? null;
+    setDbg0Snap(snap);
+  } catch {
+    setDbg0Snap(null);
+  }
+}, []);
+
+useEffect(() => {
+  if (debugOpen) refreshDbg0Snap();
+}, [debugOpen, refreshDbg0Snap]);
+
 
   // Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
   useEffect(() => {
@@ -1359,14 +1375,69 @@ export default function App() {
       {debugOpen ? (
         <PanelShell key="debugger" title="Debugger" onClose={() => setDebugOpen(false)}>
           <div className="sidebar__section">
-            <div className="sidebar__section-title">Debugger</div>
+            <div className="sidebar__section-title">Отладчик</div>
             <div className="hint">
-              Панель Debugger (MVP). Открытие: кнопка <b>Debug</b> или хоткей <b>Alt+Ctrl+E</b>.
+              Открытие: кнопка <b>Debug</b> или <b>Alt+Ctrl+E</b>.
               <br />
-              Дальше: Errors / Snapshots / Network / Models / Tools + Copy bundle.
+              Здесь собраны данные для диагностики (ошибки/снапшоты/сеть/модели/инструменты).
             </div>
           </div>
-          <div className="placeholder">Скоро.</div>
+
+          <div className="sidebar__section">
+            <div className="sidebar__section-title">Bootstrap (Level 0)</div>
+            <div className="hint">Аварийный слой до React: что произошло, если UI падал на старте.</div>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => {
+                  refreshDbg0Snap();
+                  setDbgRefreshOk(true);
+                  window.setTimeout(() => setDbgRefreshOk(false), 700);
+                }}
+                style={dbgRefreshOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
+              >
+                {dbgRefreshOk ? "Refreshed" : "Refresh"}
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={async () => {
+                  try {
+                    const txt = JSON.stringify(dbg0Snap ?? { empty: true }, null, 2);
+                    await navigator.clipboard.writeText(txt);
+                    setDbgCopyOk(true);
+                    window.setTimeout(() => setDbgCopyOk(false), 900);
+                  } catch {}
+                }}
+                style={dbgCopyOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
+              >
+                {dbgCopyOk ? "Copied!" : "Copy L0"}
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              {!dbg0Snap ? (
+                <div className="hint">Level 0 snapshot: нет данных (или ещё не было ошибок).</div>
+              ) : (
+                <div>
+                  <div className="hint">
+                    Events: <b>{Array.isArray(dbg0Snap?.events) ? dbg0Snap.events.length : 0}</b>
+                  </div>
+                  <div className="hint">
+                    Last error: <b>{dbg0Snap?.lastError?.message || "—"}</b>
+                  </div>
+                  <div className="hint">
+                    Kind: <b>{dbg0Snap?.lastError?.kind || "—"}</b>
+                  </div>
+                  <pre style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                    {JSON.stringify(dbg0Snap?.lastError || {}, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
         </PanelShell>
       ) : null}
 

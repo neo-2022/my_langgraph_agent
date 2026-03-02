@@ -218,11 +218,19 @@ function initDebuggerLevel0() {
 
   // Error traps (до React)
   window.addEventListener(
-    "error",
-    (ev) => {
-      const err = ev?.error;
+      "error",
+      (ev) => {
+        const err = ev?.error;
+        const msg = String(err?.message || ev?.message || "Unknown error");
+
+        // Browser noise: не считаем фатальной ошибкой старта UI.
+        if (msg === "ResizeObserver loop completed with undelivered notifications.") {
+          record("warn", { kind: "window.error", message: msg });
+          return;
+        }
+
       showError("window.error", {
-        message: String(err?.message || ev?.message || "Unknown error"),
+        message: msg,
         stack: String(err?.stack || ""),
         file: String(ev?.filename || ""),
         line: Number(ev?.lineno || 0),

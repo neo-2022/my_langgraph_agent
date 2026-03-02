@@ -5,7 +5,7 @@
 - `- [x]` — сделано
 - `- [ ] (IN PROGRESS)` — в работе прямо сейчас
 
-Источник правды по UI/Graph/Run/Debugger: **`CHECKLIST.md`**  
+Источник правды по UI/Graph/Run/Debugger: **`CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`**  
 Связанный документ “что и зачем”: `ROADMAP.md`
 
 ---

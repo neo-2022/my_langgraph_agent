@@ -24,6 +24,12 @@ export default function Tooltip({
   const [scopeEl, setScopeEl] = useState(null);
   const [pos, setPos] = useState({ left: 0, top: 0 });
 
+  const setAnyRef = (ref, value) => {
+    if (!ref) return;
+    if (typeof ref === "function") ref(value);
+    else if (typeof ref === "object") ref.current = value;
+  };
+
   const resolveScopeEl = useCallback(() => {
     const host = hostRef.current;
     if (!host) return null;
@@ -96,13 +102,10 @@ export default function Tooltip({
 
       const wantUp = spaceAbove >= tr.height + pad && spaceAbove > spaceBelow;
 
-      let top = wantUp
-        ? (hr.top - sr.top) - tr.height - pad
-        : (hr.bottom - sr.top) + pad;
-
+      let top = wantUp ? hr.top - sr.top - tr.height - pad : hr.bottom - sr.top + pad;
       top = Math.max(pad, Math.min(sr.height - tr.height - pad, top));
 
-      let left = (hr.left + hr.width / 2) - sr.left;
+      let left = hr.left + hr.width / 2 - sr.left;
       const halfW = tr.width / 2;
       left = Math.max(pad + halfW, Math.min(sr.width - pad - halfW, left));
 
@@ -129,59 +132,64 @@ export default function Tooltip({
 
   if (!tip) return children;
 
-  const child = (() => {
-    // Клонируем единственного ребенка и вешаем ref/handlers
-    // (Важно: child должен быть DOM-element, как button/div)
-    const el = children;
-    return {
-      ...el,
-      props: {
-        ...el.props,
-        ref: hostRef,
-        onMouseEnter: (e) => {
-          el.props?.onMouseEnter?.(e);
-          setOpen(true);
-        },
-        onMouseLeave: (e) => {
-          el.props?.onMouseLeave?.(e);
-          setOpen(false);
-        },
-        onFocus: (e) => {
-          el.props?.onFocus?.(e);
-          setOpen(true);
-        },
-        onBlur: (e) => {
-          el.props?.onBlur?.(e);
-          setOpen(false);
-        },
-        "aria-label": el.props?.["aria-label"] || tip,
-        tabIndex: el.props?.tabIndex ?? 0,
+  // Должен быть один React-element (button/div). И главное: НЕ ломаем исходный ref.
+  const el = children;
+  const originalRef = el?.ref;
+
+  const child = {
+    ...el,
+    props: {
+      ...el.props,
+      ref: (node) => {
+        hostRef.current = node;
+        setAnyRef(originalRef, node);
       },
-    };
-  })();
+      onMouseEnter: (e) => {
+        el.props?.onMouseEnter?.(e);
+        setOpen(true);
+      },
+      onMouseLeave: (e) => {
+        el.props?.onMouseLeave?.(e);
+        setOpen(false);
+      },
+      onFocus: (e) => {
+        el.props?.onFocus?.(e);
+        setOpen(true);
+      },
+      onBlur: (e) => {
+        el.props?.onBlur?.(e);
+        setOpen(false);
+      },
+      "aria-label": el.props?.["aria-label"] || tip,
+      tabIndex: el.props?.tabIndex ?? 0,
+    },
+  };
 
   // Portal target
   const target = scope === "drawer" ? scopeEl : document.body;
 
-  const bubble = open && target
-    ? createPortal(
-        <div
-          ref={tipRef}
-          className={`tt__bubble ${scope === "drawer" ? "tt__bubble--drawer" : "tt__bubble--viewport"} ${className}`}
-          style={{
-            position: scope === "drawer" ? "absolute" : "fixed",
-            left: pos.left,
-            top: pos.top,
-            transform: "translateX(-50%)",
-            maxWidth: `min(${maxWidth}px, calc(100% - 20px))`,
-            pointerEvents: "none",
-          }}
-        >
-          {tip}
-        </div>,
-        target
-      )
-    : null;
+  const bubble =
+    open && target
+      ? createPortal(
+          <div
+            ref={tipRef}
+            className={`tt__bubble ${
+              scope === "drawer" ? "tt__bubble--drawer" : "tt__bubble--viewport"
+            } ${className}`}
+            style={{
+              position: scope === "drawer" ? "absolute" : "fixed",
+              left: pos.left,
+              top: pos.top,
+              transform: "translateX(-50%)",
+              maxWidth: `min(${maxWidth}px, calc(100% - 20px))`,
+              pointerEvents: "none",
+            }}
+          >
+            {tip}
+          </div>,
+          target
+        )
+      : null;
 
   return (
     <>

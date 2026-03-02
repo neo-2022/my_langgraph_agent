@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import ReactFlow, { Background, Controls, MiniMap, useEdgesState, useNodesState } from "reactflow";
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  useEdgesState,
+  useNodesState,
+} from "reactflow";
 import dagre from "dagre";
 import Tooltip from "./Tooltip.jsx";
 import "./GraphView.css";
@@ -11,22 +17,100 @@ async function getJson(url, opts = {}) {
   return await r.json();
 }
 
+function inferKindFromId(id) {
+  if (id === "__start__") return "start";
+  if (id === "__end__") return "end";
+  if (id === "call_model") return "model";
+  if (id === "tools") return "tools";
+  return "";
+}
+
 function rfNodeFromApi(n) {
   const id = String(n?.id ?? "");
+  const kind = String(n?.kind ?? "") || inferKindFromId(id);
+
   return {
     id,
     position: { x: 0, y: 0 },
     data: { label: String(n?.label ?? id) },
     type: "default",
-    className: n?.kind ? `lg-node--${n.kind}` : "",
+    className: kind ? `lg-node--${kind}` : "",
+    selected: false,
   };
 }
+
+function looksDashedEdge(e) {
+  const kind = String(e?.kind ?? e?.type ?? "");
+  const dashedFlag =
+    Boolean(e?.dashed) ||
+    Boolean(e?.dash) ||
+    Boolean(e?.is_dashed) ||
+    Boolean(e?.isDashed) ||
+    /dash/i.test(kind);
+
+  const styleDash =
+    typeof e?.style?.strokeDasharray === "string" ||
+    typeof e?.style?.strokeDasharray === "number";
+
+  const directDash =
+    typeof e?.strokeDasharray === "string" ||
+    typeof e?.strokeDasharray === "number" ||
+    typeof e?.stroke_dasharray === "string" ||
+    typeof e?.stroke_dasharray === "number";
+
+  return dashedFlag || styleDash || directDash;
+}
+
 function rfEdgeFromApi(e) {
+  const id = String(e?.id ?? `${e?.source}->${e?.target}`);
+  const source = String(e?.source ?? "");
+  const target = String(e?.target ?? "");
+
+  const dashFromApi = looksDashedEdge(e);
+
+  // Пунктир “по смыслу”: все связи к узлу tools (если бэк не пометил их сам)
+  const s = source.toLowerCase();
+  const t = target.toLowerCase();
+  const isToolsEdge = s === "tools" || t === "tools";
+
+  const dashed = dashFromApi || isToolsEdge;
+
+  // animated: если бэк дал — оставляем, иначе включаем для dashed
+  const animated = Boolean(e?.animated) || dashed;
+
+  const dashValue =
+    typeof e?.style?.strokeDasharray === "string" ||
+    typeof e?.style?.strokeDasharray === "number"
+      ? String(e.style.strokeDasharray)
+      : typeof e?.strokeDasharray === "string" ||
+          typeof e?.strokeDasharray === "number"
+        ? String(e.strokeDasharray)
+        : typeof e?.stroke_dasharray === "string" ||
+            typeof e?.stroke_dasharray === "number"
+          ? String(e.stroke_dasharray)
+          : "6 4";
+
+  const style = dashed
+    ? { ...(e?.style || {}), strokeDasharray: dashValue }
+    : e?.style
+      ? { ...e.style }
+      : undefined;
+
+  const className = [
+    isToolsEdge ? "lg-edge--tools" : "",
+    animated ? "lg-edge--animated" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return {
-    id: String(e?.id ?? `${e?.source}->${e?.target}`),
-    source: String(e?.source ?? ""),
-    target: String(e?.target ?? ""),
+    id,
+    source,
+    target,
     label: e?.label ? String(e.label) : "",
+    animated,
+    style,
+    className,
   };
 }
 
@@ -67,28 +151,38 @@ function FancySelect({
   const setBtnRef = useCallback(
     (el) => {
       btnRef.current = el;
-      if (typeof buttonRefExternal === "object" && buttonRefExternal) buttonRefExternal.current = el;
+      if (typeof buttonRefExternal === "object" && buttonRefExternal) {
+        buttonRefExternal.current = el;
+      }
     },
     [buttonRefExternal]
   );
 
   const selected = options.find((o) => String(o.value) === String(value));
-  const close = () => setOpen(false);
+  const close = useCallback(() => setOpen(false), []);
 
   const compute = useCallback(() => {
     const b = btnRef.current;
-    if (!b) return;
+    if (!b) return false;
+
     const r = b.getBoundingClientRect();
-    setMenuPos({
-      left: Math.max(10, Math.min(window.innerWidth - r.width - 10, r.left)),
-      top: r.bottom + 8,
-      width: r.width,
-    });
+    if (r.width <= 1 || r.height <= 1) return false;
+
+    const width = r.width;
+    const left = Math.max(10, Math.min(window.innerWidth - width - 10, r.left));
+    const top = r.bottom + 8;
+
+    setMenuPos({ left, top, width });
+    return true;
   }, []);
 
   useEffect(() => {
     if (!open) return;
-    compute();
+
+    if (!compute()) {
+      close();
+      return;
+    }
 
     const onDoc = (e) => {
       const b = btnRef.current;
@@ -97,18 +191,21 @@ function FancySelect({
       if (b.contains(e.target) || m.contains(e.target)) return;
       close();
     };
-    const onReflow = () => compute();
+
+    const onReflow = () => {
+      if (!compute()) close();
+    };
 
     document.addEventListener("mousedown", onDoc);
-    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("scroll", onReflow, { capture: true, passive: true });
     window.addEventListener("resize", onReflow);
 
     return () => {
       document.removeEventListener("mousedown", onDoc);
-      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("scroll", onReflow, { capture: true });
       window.removeEventListener("resize", onReflow);
     };
-  }, [open, compute]);
+  }, [open, compute, close]);
 
   const menu = open
     ? createPortal(
@@ -120,7 +217,9 @@ function FancySelect({
         >
           <div className="fselect__menu-inner">
             {options.length === 0 ? (
-              <div className="fselect__item fselect__item--disabled">{placeholder}</div>
+              <div className="fselect__item fselect__item--disabled">
+                {placeholder}
+              </div>
             ) : (
               options.map((o) => {
                 const isActive = String(o.value) === String(value);
@@ -128,7 +227,9 @@ function FancySelect({
                   <button
                     key={String(o.value)}
                     type="button"
-                    className={`fselect__item ${isActive ? "fselect__item--active" : ""}`}
+                    className={`fselect__item ${
+                      isActive ? "fselect__item--active" : ""
+                    }`}
                     onClick={() => {
                       onChange?.(o.value);
                       close();
@@ -152,17 +253,20 @@ function FancySelect({
           ref={setBtnRef}
           type="button"
           className={`fselect ${disabled ? "fselect--disabled" : ""}`}
-          onClick={() => !disabled && setOpen((v) => !v)}
+          onClick={() => {
+            if (disabled) return;
+            setOpen((v) => !v);
+          }}
           aria-expanded={open ? "true" : "false"}
           disabled={disabled}
-          style={{
-            width: "max-content",
-            maxWidth: "70vw",
-            marginTop: 0,
-          }}
+          style={{ width: "max-content", maxWidth: "70vw", marginTop: 0 }}
         >
           <span className="fselect__value" style={{ whiteSpace: "nowrap" }}>
-            {selected ? selected.label : <span className="fselect__placeholder">{placeholder}</span>}
+            {selected ? (
+              selected.label
+            ) : (
+              <span className="fselect__placeholder">{placeholder}</span>
+            )}
           </span>
           <span className="fselect__chev" aria-hidden="true">
             ▾
@@ -188,6 +292,75 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const lastFetchRef = useRef({ key: "", ts: 0 });
   const abortRef = useRef(null);
 
+  const rfRef = useRef(null);
+  const wrapRef = useRef(null);
+
+  // Минимальный "пинок":
+  // - ждём 2 кадра (layout -> paint), потом fitView
+  // - диспатчим resize, чтобы ReactFlow точно пересчитал размеры
+  const kick = useCallback((opts = {}) => {
+    const padding = typeof opts.padding === "number" ? opts.padding : 0.25;
+    const duration = typeof opts.duration === "number" ? opts.duration : 0;
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          window.dispatchEvent(new Event("resize"));
+        } catch {}
+        const inst = rfRef.current;
+        if (!inst) return;
+
+        const el = wrapRef.current;
+        const h = el ? Math.floor(el.getBoundingClientRect().height) : 0;
+        if (h <= 0) return;
+
+        try {
+          inst.fitView?.({ padding, duration, includeHiddenNodes: true });
+        } catch {}
+      });
+    });
+  }, []);
+
+  const normalizeFocusId = useCallback((id) => {
+    const s = String(id || "");
+    if (s === "agent" || s === "model") return "call_model";
+    if (s === "user" || s === "start") return "__start__";
+    if (s === "end") return "__end__";
+    return s;
+  }, []);
+
+  const applyFocus = useCallback(
+    (idRaw) => {
+      const inst = rfRef.current;
+      if (!inst) return;
+
+      const nextId = normalizeFocusId(idRaw);
+
+      setNodes((prev) =>
+        prev.map((n) => ({
+          ...n,
+          selected: nextId ? String(n.id) === nextId : false,
+        }))
+      );
+
+      if (!nextId) return;
+
+      const liveNodes = typeof inst.getNodes === "function" ? inst.getNodes() : [];
+      const node = liveNodes.find((n) => String(n.id) === nextId);
+      if (!node) return;
+
+      try {
+        inst.fitView?.({
+          nodes: [node],
+          padding: 0.45,
+          duration: 200,
+          includeHiddenNodes: true,
+        });
+      } catch {}
+    },
+    [setNodes, normalizeFocusId]
+  );
+
   const loadGraph = useCallback(async () => {
     if (!assistantId) return;
 
@@ -195,7 +368,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     const now = Date.now();
 
     if (inFlightRef.current) return;
-    if (lastFetchRef.current.key === key && now - lastFetchRef.current.ts < 2000) return;
+    if (lastFetchRef.current.key === key && now - lastFetchRef.current.ts < 1200) return;
 
     lastFetchRef.current = { key, ts: now };
     inFlightRef.current = true;
@@ -210,7 +383,10 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     setLoading(true);
 
     try {
-      const data = await getJson(`/api/assistants/${assistantId}/graph`, { signal: ctrl.signal });
+      const data = await getJson(`/api/assistants/${assistantId}/graph`, {
+        signal: ctrl.signal,
+      });
+
       const apiNodes = Array.isArray(data?.nodes) ? data.nodes : [];
       const apiEdges = Array.isArray(data?.edges) ? data.edges : [];
 
@@ -218,8 +394,12 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       const rfEdges = apiEdges.map(rfEdgeFromApi);
 
       const laid = layoutDagre(rfNodes, rfEdges, direction);
+
       setNodes(laid.nodes);
       setEdges(laid.edges);
+
+      // После установки nodes/edges — пинаем размеры/fitView
+      kick({ padding: 0.25, duration: 0 });
     } catch (e) {
       if (String(e?.name) !== "AbortError") {
         setError(String(e?.message || e));
@@ -230,7 +410,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       setLoading(false);
       inFlightRef.current = false;
     }
-  }, [assistantId, direction, setNodes, setEdges]);
+  }, [assistantId, direction, setNodes, setEdges, kick]);
 
   useEffect(() => {
     loadGraph();
@@ -244,15 +424,18 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     };
   }, []);
 
-  const hint = useMemo(() => {
-    if (!assistantId) return "Нет assistant_id. Открой Run и убедись, что /api доступен.";
-    if (loading) return "Загружаю граф…";
-    if (error) return "Ошибка загрузки графа.";
-    if (!hasGraph) return "Граф пустой.";
-    return "";
-  }, [assistantId, loading, error, hasGraph]);
+  useEffect(() => {
+    if (!assistantId) return;
+    if (nodes.length <= 0) return;
+    kick({ padding: 0.25, duration: 0 });
+  }, [assistantId, direction, nodes.length, kick]);
 
-  // ReactFlow Controls (lib) — оставляем data-tip + CSS override в GraphView.css
+  useEffect(() => {
+    if (!assistantId) return;
+    applyFocus(focusNodeId);
+  }, [assistantId, direction, focusNodeId, nodes.length, applyFocus]);
+
+  // Tooltip patch for ReactFlow controls
   useEffect(() => {
     const root = document.querySelector(".react-flow");
     if (!root) return;
@@ -268,7 +451,12 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
 
     patch();
     const mo = new MutationObserver(() => patch());
-    mo.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["title"] });
+    mo.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["title"],
+    });
     return () => mo.disconnect();
   }, []);
 
@@ -304,6 +492,11 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     },
     [onNodeSelected]
   );
+
+  const onPaneClick = useCallback(() => {
+    onNodeSelected?.("");
+    applyFocus("");
+  }, [applyFocus, onNodeSelected]);
 
   const dirOptions = useMemo(
     () => [
@@ -349,14 +542,40 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     };
   }, [measure, direction]);
 
+  const hint = useMemo(() => {
+    if (!assistantId) return "Нет assistant_id. Открой Run и убедись, что /api доступен.";
+    if (loading) return "Загружаю граф…";
+    if (error) return "Ошибка загрузки графа.";
+    if (!hasGraph) return "Граф пустой.";
+    return "";
+  }, [assistantId, loading, error, hasGraph]);
+
+
   return (
     <div
       className="card graphview"
-      style={{ height: "100%", minHeight: 0, padding: 0, display: "flex", flexDirection: "column" }}
+      style={{
+                minHeight: 0,
+        padding: 0,
+        display: "flex",
+        flexDirection: "column",
+        flex: 1,
+        minWidth: 0,
+        alignSelf: "stretch",
+      }}
     >
-      <div style={{ padding: 12, borderBottom: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.03)" }}>
+      <div
+        style={{
+          padding: 12,
+          borderBottom: "1px solid rgba(255,255,255,0.10)",
+          background: "rgba(255,255,255,0.03)",
+        }}
+      >
         <div className="graphbar">
-          <div className="graphbar__controls" style={{ alignItems: "center", flexWrap: "nowrap" }}>
+          <div
+            className="graphbar__controls"
+            style={{ alignItems: "center", flexWrap: "nowrap" }}
+          >
             <FancySelect
               value={direction}
               options={dirOptions}
@@ -393,14 +612,19 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div ref={wrapRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative" }}>
         <ReactFlow
-          className="lg-node"
+          style={{ position: "absolute", inset: 0 }}
           nodes={nodes}
           edges={edges}
+          onInit={(inst) => {
+            rfRef.current = inst;
+            kick({ padding: 0.25, duration: 0 });
+          }}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
           fitView
         >
           <Background />

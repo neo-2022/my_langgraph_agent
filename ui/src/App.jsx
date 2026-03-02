@@ -1577,24 +1577,29 @@ export default function App() {
                 </div>
               }
               right={
-                <GraphView
+  <div className="graph-host">
+    <GraphView
                   assistantId={assistantId}
                   focusNodeId={focusNodeId}
                   onNodeSelected={setFocusNodeId}
                 />
-              }
+  </div>
+}
             />
           )}
 
-          {tab === "graph" && (
-            <GraphView
-              assistantId={assistantId}
-              focusNodeId={focusNodeId}
-              onNodeSelected={setFocusNodeId}
-            />
-          )}
 
-          {tab === "history" && (
+            {tab === "graph" && (
+  <div className="graph-host">
+    <GraphView
+                assistantId={assistantId}
+                focusNodeId={focusNodeId}
+                onNodeSelected={setFocusNodeId}
+              />
+  </div>
+)}
+
+            {tab === "history" && (
             <div className="card">
               <h2>History</h2>
               <p className="muted">История runs/threads + повтор запуска.</p>

@@ -425,6 +425,7 @@ a:hover {
   flex: 1;
   min-height: 0;
 
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -442,6 +443,42 @@ a:hover {
   min-width: 0;
   flex: 1;
   align-self: stretch;
+}
+
+
+/* Graph containers (Graph tab + SplitView panes) */
+.graph-host {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+/* Graph tab: ensure GraphView fills height */
+.content > .graphview,
+.graph-host > .graphview {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  min-width: 0;
+  align-self: stretch;
+}
+
+/* Graph tab: let inner panes handle scroll, keep stable height for ReactFlow */
+
+/* Graph tab: stable height for ReactFlow */
+.content[data-tab="graph"] {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+/* Graph tab: panes must not scroll; keep stable height for ReactFlow */
+.content[data-tab="graph"] .sv__pane {
+  overflow: hidden;
 }
 
 /* =========================
@@ -998,8 +1035,12 @@ a:hover {
 }
 
 .sv__pane {
+  flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .sv__pane--left {

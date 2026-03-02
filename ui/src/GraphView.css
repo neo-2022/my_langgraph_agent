@@ -7,16 +7,98 @@
   display: none !important;
 }
 
-/* Canvas background (необязательно, но помогает вернуть “вид”) */
+/* Canvas background */
 .graphview .react-flow{
   background: rgba(0,0,0,0.10);
 }
 
+/* ===========================
+   FancySelect (GraphView local)
+   =========================== */
+
+.graphview .fselect{
+  height: 42px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.92);
+  padding: 10px 12px;
+}
+
+.graphview .fselect__value{
+  font-size: 13px;
+  line-height: 1;
+}
+
+.graphview .fselect__chev{
+  opacity: 0.85;
+}
+
+/* ВАЖНО: меню рисуется через portal в document.body, поэтому позиционируем fixed */
+.fselect__menu{
+  position: fixed;
+  z-index: 10000;
+}
+
+.fselect__menu-inner{
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(10,14,22,0.92);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+}
+
+.fselect__item{
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.92);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.fselect__item:hover{
+  background: rgba(255,255,255,0.06);
+}
+
+.fselect__item--active{
+  background: rgba(140,160,255,0.16);
+}
+
+.fselect__item--disabled{
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fselect__placeholder{
+  color: rgba(255,255,255,0.55);
+}
+
+/* ===========================
+   ReactFlow visuals
+   =========================== */
+
 /* Edges */
 .graphview .react-flow__edge-path{
   stroke: rgba(255,255,255,0.28) !important;
-  stroke-width: 1.5 !important;
+  stroke-width: 1.6 !important;
 }
+
+/* Если edge связан с tools — пунктир (по data-id edge) */
+.graphview .react-flow__edge[data-id*="tools"] .react-flow__edge-path,
+.graphview .react-flow__edge[data-id*="->tools"] .react-flow__edge-path,
+.graphview .react-flow__edge[data-id*="tools->"] .react-flow__edge-path{
+  stroke-dasharray: 6 4 !important;
+}
+
+/* Animated edges */
 .graphview .react-flow__edge.animated .react-flow__edge-path{
   stroke-dasharray: 6 4 !important;
   animation: dashdraw 0.6s linear infinite;
@@ -40,36 +122,63 @@
   border: 1px solid rgba(0,0,0,0.35) !important;
 }
 
-/* Nodes */
+/* Nodes base */
 .graphview .react-flow__node-default{
   border-radius: 14px !important;
   border: 1px solid rgba(255,255,255,0.14) !important;
   background: rgba(255,255,255,0.06) !important;
   color: rgba(255,255,255,0.92) !important;
+
+  /* ↑ просьба: шрифт в нодах крупнее */
+  font-size: 14px !important;
+  font-weight: 650 !important;
+
   box-shadow:
     0 10px 22px rgba(0,0,0,0.22),
     inset 0 1px 0 rgba(255,255,255,0.08) !important;
 }
 
-/* Node text (на случай, если либ/темы вставляют свои классы) */
-.graphview .react-flow__node-default .react-flow__node-default__label,
-.graphview .react-flow__node-default .react-flow__node-default__content,
-.graphview .react-flow__node-default .react-flow__node-default__body,
-.graphview .react-flow__node-default .react-flow__node-default__text,
-.graphview .react-flow__node-default .react-flow__node-default__title{
-  color: rgba(255,255,255,0.92) !important;
+/* Selected/focus — ярче, чтобы было видно */
+.graphview .react-flow__node-default.selected,
+.graphview .react-flow__node-default:focus-within{
+  border-color: rgba(185,200,230,0.72) !important;
+  box-shadow:
+    0 0 0 4px rgba(185,200,230,0.16),
+    0 18px 40px rgba(0,0,0,0.40),
+    inset 0 1px 0 rgba(255,255,255,0.12) !important;
 }
 
-/* Accent nodes by kind via className on node */
+/* Accent nodes by kind (если API начнет отдавать kind) */
 .graphview .lg-node--start.react-flow__node-default,
 .graphview .lg-node--start .react-flow__node-default{
-  border-color: rgba(0,255,160,0.26) !important;
-  background: rgba(0,255,160,0.08) !important;
+  border-color: rgba(0,255,160,0.36) !important;
+  background: rgba(0,255,160,0.10) !important;
 }
 .graphview .lg-node--end.react-flow__node-default,
 .graphview .lg-node--end .react-flow__node-default{
-  border-color: rgba(255,90,90,0.26) !important;
-  background: rgba(255,90,90,0.08) !important;
+  border-color: rgba(255,90,90,0.36) !important;
+  background: rgba(255,90,90,0.10) !important;
+}
+
+/* Accent nodes by data-id (это то, что реально есть у ReactFlow DOM) */
+.graphview .react-flow__node[data-id="__start__"] .react-flow__node-default{
+  border-color: rgba(0,255,160,0.36) !important;
+  background: rgba(0,255,160,0.10) !important;
+}
+
+.graphview .react-flow__node[data-id="__end__"] .react-flow__node-default{
+  border-color: rgba(255,90,90,0.36) !important;
+  background: rgba(255,90,90,0.10) !important;
+}
+
+.graphview .react-flow__node[data-id="tools"] .react-flow__node-default{
+  border-color: rgba(140,160,255,0.38) !important;
+  background: rgba(140,160,255,0.10) !important;
+}
+
+.graphview .react-flow__node[data-id="call_model"] .react-flow__node-default{
+  border-color: rgba(255,210,140,0.38) !important;
+  background: rgba(255,210,140,0.10) !important;
 }
 
 /* MiniMap */
@@ -88,14 +197,6 @@
   stroke: rgba(255,255,255,0.18) !important;
   stroke-width: 1px !important;
 }
-.graphview .react-flow__minimap-node.lg-node--start{
-  fill: rgba(0,255,160,0.18) !important;
-  stroke: rgba(0,255,160,0.28) !important;
-}
-.graphview .react-flow__minimap-node.lg-node--end{
-  fill: rgba(255,90,90,0.18) !important;
-  stroke: rgba(255,90,90,0.28) !important;
-}
 
 /* Controls container */
 .graphview .react-flow__controls{
@@ -106,7 +207,7 @@
   gap: 8px !important;
 }
 
-/* Controls buttons: круглые */
+/* Controls buttons */
 .graphview .react-flow__controls button{
   position: relative;
   width: 36px !important;
@@ -147,9 +248,6 @@
   width: 18px !important;
   height: 18px !important;
   display: block !important;
-  filter:
-    drop-shadow(0 1px 0 rgba(0,0,0,0.35))
-    drop-shadow(0 0 10px rgba(185,200,230,0.06));
   opacity: 0.98 !important;
 }
 .graphview .react-flow__controls button svg path,
@@ -161,15 +259,6 @@
   fill: rgba(255,255,255,0.90) !important;
   stroke: rgba(255,255,255,0.90) !important;
 }
-.graphview .react-flow__controls button:hover svg path,
-.graphview .react-flow__controls button:hover svg line,
-.graphview .react-flow__controls button:hover svg polyline,
-.graphview .react-flow__controls button:hover svg polygon,
-.graphview .react-flow__controls button:hover svg circle,
-.graphview .react-flow__controls button:hover svg rect{
-  fill: rgba(255,255,255,0.98) !important;
-  stroke: rgba(255,255,255,0.98) !important;
-}
 
 .graphview .react-flow__controls button:disabled{
   opacity: 0.45 !important;
@@ -178,7 +267,7 @@
   box-shadow: none !important;
 }
 
-/* Tooltip for controls from data-tip — СПРАВА от кнопок */
+/* Tooltip for controls from data-tip — как .tt__bubble */
 .graphview .react-flow__controls button[data-tip]::after{
   content: attr(data-tip);
   position: absolute;
@@ -198,6 +287,7 @@
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.25px;
+  line-height: 1.25;
   box-shadow: 0 10px 26px rgba(0,0,0,0.35);
 
   opacity: 0;

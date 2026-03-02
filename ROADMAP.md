@@ -2,7 +2,7 @@
 
 Этот файл — “план проекта” простыми словами: что уже сделано, где мы сейчас, что дальше и в каком порядке.
 
-**Единый источник правды по UI/Graph/Run/Debugger:** `CHECKLIST.md`  
+**Единый источник правды по UI/Graph/Run/Debugger:** `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`  
 `TASKS.md` — трекер выполнения пунктов из чеклиста.
 
 ---
@@ -78,6 +78,18 @@
 ## Этап B2 — UI Debugger (Split View + Execution Journal)  ← делаем сейчас
 Цель: “живой” интерфейс для отладки.
 
+
+### B2.0 UI Error Debugger / обработчик ошибок (обязательный слой)
+Зачем: чтобы любые ошибки в UI не “терялись” и показывались единообразно.
+
+Что будет:
+- единый формат UiError (scope/severity/title/message/details/ctx/dedupe/actions)
+- глобальный индикатор + drawer “Ошибки”
+- действия: copy details, переход к контексту, retry, restart LangGraph, reload
+
+Спецификация: `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`, раздел 1.0.
+
+
 ### B2.1 Split View (обязательно)
 - 3 режима: Run only / Graph only / Split
 - draggable splitter, ограничения min-width
@@ -96,7 +108,7 @@
 ### B2.3 Execution Journal (UI) (MVP)
 - отдельный список событий/таймлайн рядом с messages
 - временное наполнение из messages/tool_calls
-- контракт события фиксируем (см. CHECKLIST.md)
+- контракт события фиксируем (см. CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md)
 
 ---
 

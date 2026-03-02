@@ -54,11 +54,21 @@
 - [x] Zoom/Pan/Drag
 - [x] Автолэйаут (Dagre)
 - [x] Controls + MiniMap
-- [ ] Подсветка активного узла во время выполнения (см. CHECKLIST.md)
+- [ ] Подсветка активного узла во время выполнения (см. CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md)
 
 ---
 
 ## Этап B2 — UI Debugger (Split View + Execution Journal)  ← текущий фокус
+
+
+### B2.0 UI Error Debugger / обработчик ошибок (обязательный слой)
+- [ ] Реализовать глобальный слой ошибок UI (см. `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`, раздел 1.0):
+  - [ ] нормализация в единый формат UiError (scope/severity/title/message/details/ctx/dedupe/actions)
+  - [ ] drawer “Ошибки” + глобальный индикатор + dedupe/throttle (без спама)
+  - [ ] интеграция: Run / API / Models / Graph / Tools + ErrorBoundary + unhandledrejection/onerror
+  - [ ] действия: copy details / перейти к контексту / retry / restart LangGraph / reload
+- [ ] Definition of Done: любая ошибка из источников нормализована, видна в панели, не спамит, копируется и ведёт к контексту.
+
 Цель: чтобы во время stream было видно одновременно Run и Graph + появился отдельный журнал выполнения.
 
 ### B2.1 Split View (MVP-1)

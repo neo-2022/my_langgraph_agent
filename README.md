@@ -77,7 +77,15 @@ tmux ls
 - `run.sh` — запуск всего одной командой
 
 Документация:
-- `CHECKLIST.md` — единый источник правды по UI/Graph/Run/Debugger
+- `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md` — единый источник правды по UI/Graph/Run/Debugger
+
+## UI Error Debugger (слой обработки ошибок в UI)
+- Единый слой ошибок для всего интерфейса: Run stream / API / UI proxy / Graph / Models / Tools / React.
+- Нормализация ошибок в формат UiError (scope/severity/title/message/details/ctx/dedupe/actions).
+- Отображение: глобальный индикатор + drawer “Ошибки”, без спама (dedupe/throttle).
+- Действия: copy details, переход к контексту (run_id/node_id/span_id), retry, restart LangGraph, reload.
+- Спецификация и Definition of Done: см. `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`, раздел 1.0.
+
 - `TASKS.md` — трекер прогресса (по чеклисту)
 - `ROADMAP.md` — план “что и зачем” (по этапам)
 
@@ -96,4 +104,4 @@ tmux ls
 git log -1 --oneline
 ~~~
 
-Вся история зафиксирована в репозитории (код + README/TASKS/ROADMAP/CHECKLIST).
+Вся история зафиксирована в репозитории (код + README/TASKS/ROADMAP/CHECKLIST_UI_GRAPH_RUN_DEBUGGER).

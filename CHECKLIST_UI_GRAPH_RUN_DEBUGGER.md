@@ -27,6 +27,19 @@
   - [ ] даёт действия: copy / details / перейти к контексту / retry / restart
 - [ ] Никаких “временных” костылей в репозитории: только финальная реализация (временное — только локально для теста и сразу удалить).
 
+Требования UX/интеграции (обязательные):
+- [ ] Debugger работает в фоне с момента старта UI; панель автоматически открывается при error/fatal.
+- [ ] Кнопка вызова панели: **Debug** (EN) в верхней панели **левее** ссылки/API Docs.
+- [ ] Хоткей: **Alt+Ctrl+E** (toggle панели).
+- [ ] Панель ресайзится мышью (drag-resize) и сохраняет размер/состояние (localStorage).
+- [ ] Кнопки — EN, tooltips — RU, тексты ошибок/описания — RU.
+- [ ] Запрет хардкода: Jump/корреляция только по данным (`node_id`/`span_id`/`run_id`) или конфигу, но не по “магическим строкам”.
+
+- [ ] **Bootstrap Debugger (до React):** Debugger-слой стартует до монтирования UI и способен показать окно отладки, даже если App/React не запустился:
+  - [ ] подписка на `window.onerror` и `window.onunhandledrejection` устанавливается **до** `ReactDOM.createRoot(...).render(...)`
+  - [ ] при фатальной ошибке старта (App не смонтировался / crash на старте) показывается fallback overlay “Debugger” (без зависимости от React)
+  - [ ] overlay позволяет: Copy details (stack/message), закрыть/открыть, и автоматически открывается при error/fatal
+
 #### 1.0.2 Источники ошибок (что обязаны ловить)
 - [ ] Run stream:
   - [ ] HTTP ошибки `/api/runs/stream`
@@ -118,6 +131,118 @@
   - [ ] можно скопировать детали
   - [ ] по возможности можно перейти к контексту
 
+
+#### 1.0.9 Сквозной Debugger (полный объём требований) — **самодостаточно “от А до Я”**
+> Подробная архитектура/описание: `debugger/README.md` (не вместо чеклиста, а как расширенная “книга”).  
+> В чеклисте ниже фиксируем **все обязательные** элементы реализации.
+
+**A) Debugger Core (фон, всегда включён)**
+- [ ] Debugger Core инициализируется первым при старте UI (до основной логики Run/Graph).
+- [ ] Core собирает события/ошибки в ring-buffer (настраиваемые лимиты):
+  - [ ] ошибки (например N=200)
+  - [ ] breadcrumbs (например N=200)
+  - [ ] network события (например N=200)
+  - [ ] snapshots (например N=50)
+- [ ] Core имеет API:
+  - [ ] pushError(UiError)
+  - [ ] pushEvent(DebugEvent)
+  - [ ] pushSnapshot(source, payload)
+  - [ ] subscribe(listener) для UI панели
+- [ ] Core делает dedupe + throttle (без спама), как описано в 1.0.4.
+
+**B) Единый формат событий (DebugEvent) и корреляция (без хардкода)**
+- [ ] Ввести формат `DebugEvent` (дополнение к UiError, для событий/трейса):
+  - [ ] `event_id`, `ts`, `level`, `name`, `origin`
+  - [ ] корреляция: `trace_id`, `span_id`, `parent_span_id?`, `run_id?`, `assistant_id?`, `node_id?`
+  - [ ] `attrs`, `payload` (preview/full-ref)
+  - [ ] `links` (related_span_ids / related_event_ids)
+- [ ] Корреляция и “Jump to context” строятся **только по данным** (`run_id`/`span_id`/`node_id`/`trace_id`/`links`) — никаких маппингов строками.
+- [ ] Поддержать `error.cause` / AggregateError (если встречается) в “цепочке причин” (без угадываний).
+
+**C) UI Error Debugger (ошибки UI/runtime)**
+- [ ] Источники (дополнительно к 1.0.2):
+  - [ ] window.onerror
+  - [ ] window.onunhandledrejection
+  - [ ] React ErrorBoundary (ошибки рендера/эффектов компонентов)
+- [ ] Каждая ошибка:
+  - [ ] нормализуется в `UiError`
+  - [ ] получает `ctx` (tab/endpoint/run_id/assistant_id/span_id/node_id при наличии)
+  - [ ] имеет “человеческое RU-описание” + hint + действия
+- [ ] Ошибка содержит ссылку на место:
+  - [ ] file/line/col (если можно извлечь)
+  - [ ] (dev) действие “Open in editor” (если есть рабочий механизм)
+
+**D) Network Debugger (UI → /api/* и /ui/*)**
+- [ ] Все запросы UI в сеть (fetch/getJson/postJson) проходят через единый слой логирования:
+  - [ ] endpoint, method, status, duration_ms
+  - [ ] ошибка/тип/сообщение (если есть)
+  - [ ] preview request/response (лимиты; без утечки чувствительных данных)
+- [ ] Network события связаны по `trace_id/span_id` с Run/Models/Tools при наличии.
+
+**E) Models Debugger (LLM request/response)**
+- [ ] Логировать модельные вызовы (минимум метаданные, оптимально — preview тела):
+  - [ ] модель/параметры (temperature/max_tokens/…)
+  - [ ] tool_calls/tool_choice (если есть)
+  - [ ] response: finish_reason, usage tokens, preview output
+  - [ ] ошибки провайдера/парсинга
+- [ ] Модельные события коррелируются со span_id (и parent_span_id шага агента/узла).
+
+**F) Tools Debugger (tool_calls)**
+- [ ] Для каждого tool call:
+  - [ ] tool_name
+  - [ ] args/result preview (лимиты)
+  - [ ] invalid_tool_calls
+  - [ ] ошибки tool execution
+- [ ] Корреляция tool spans с parent span (агент/узел) обязательна (когда появятся backend spans).
+
+**G) Graph Debugger (snapshots + диагностика “пустого графа”)**
+- [ ] Снапшот графа включает минимум:
+  - [ ] assistant_id
+  - [ ] nodes/edges count
+  - [ ] loading/error
+  - [ ] lastFetch/inFlight
+  - [ ] размеры контейнера (h/w) и факт наличия инстанса ReactFlow (если применимо)
+- [ ] При “пустом графе” после успешной загрузки — сохраняется snapshot с признаком “empty_graph”.
+- [ ] Не допускаются “пинки” и workaround’ы как часть финального решения; Debugger нужен для диагностики, а не как костыль.
+
+**H) Debugger Panel UI (единая панель)**
+- [ ] Панель существует как overlay/drawer и:
+  - [ ] авто-открывается при error/fatal
+  - [ ] открывается кнопкой Debug (EN) в topbar левее API Docs
+  - [ ] открывается хоткеем Alt+Ctrl+E
+  - [ ] ресайзится мышью + сохраняет размер/состояние (localStorage)
+- [ ] Секции (включаемые/выключаемые) и фильтры:
+  - [ ] Errors
+  - [ ] Snapshots (Graph/Run)
+  - [ ] Network
+  - [ ] Models
+  - [ ] Tools
+  - [ ] (опционально) Journal-links (поиск по span_id/event_id без дубляжа ленты)
+  - [ ] фильтры: scope/level, поиск по тексту/run_id/span_id/node_id
+  - [ ] сортировка/группировка (dedupe)
+- [ ] Язык UI:
+  - [ ] кнопки/табы — EN
+  - [ ] tooltips — RU
+  - [ ] тексты ошибок/описания/пояснения — RU
+
+**I) Интеграция с Execution Journal (без дубляжа)**
+- [ ] Journal остаётся основным списком выполнения; Debugger — источник деталей.
+- [ ] Событие Journal имеет ссылку `debug_ref` (event_id/span_id) для подгрузки деталей.
+- [ ] В Journal по клику “Details” раскрывается блок, подтянутый из Debugger (ошибка/причины/breadcrumbs/related).
+- [ ] “Open in Debugger” открывает панель на конкретной записи и подсвечивает её.
+- [ ] Jump работает только по данным node_id/span_id (никаких магических строк).
+
+**J) Debug Bundle (копирование одним блоком)**
+- [ ] Copy “debug bundle” содержит:
+  - [ ] app/ui версия (если доступна) + timestamp
+  - [ ] endpoints status (/api, /ui)
+  - [ ] текущая модель (если применимо)
+  - [ ] последние N ошибок (с dedupe count)
+  - [ ] последние N network событий
+  - [ ] последние N snapshots
+  - [ ] если выбран span/event → связанные по trace/span цепочке записи
+
+
 ### 1.1 Режимы
 - [ ] Run only
 - [ ] Graph only
@@ -155,6 +280,16 @@
 
 ### 2.2 Минимальная JSON-схема события (контракт)
 События приходят **уже в порядке времени** (UI не сортирует).
+
+#### 2.2.1 Расширение контракта (оптимально, без хардкода)
+- [ ] Контракт расширяем до сквозного DebugEvent/trace (см. `debugger/README.md`):
+  - [ ] `trace_id` (единая цепочка)
+  - [ ] `span_id` и `parent_span_id` (причинность)
+  - [ ] `node_id` (Jump на граф) — только если сервер может дать точную привязку
+  - [ ] `links`/`related_span_ids` (связанные операции)
+- [ ] UI не угадывает `node_id`: Jump возможен только если `node_id`/`span_id` есть в событии.
+- [ ] Событие может содержать `debug_ref` (event_id/span_id) для подгрузки Details из Debugger Core (без дубляжа данных).
+
 - [ ] type: node_start | node_end | tool_start | tool_end | edge_chosen
 - [ ] timestamp: ISO 8601
 - [ ] run_id: uuid

@@ -529,6 +529,20 @@ export default function App() {
   }, [tab]);
 
   const [focusNodeId, setFocusNodeId] = useState("");
+  const [debugOpen, setDebugOpen] = useState(false);
+
+  // Hotkey: Alt+Ctrl+E — открыть/закрыть Debugger
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const key = String(e?.key || "").toLowerCase();
+      if (e?.altKey && e?.ctrlKey && key === "e") {
+        e.preventDefault();
+        setDebugOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   const [openPanels, setOpenPanels] = useState(["general"]);
 
   const [apiStatus, setApiStatus] = useState("не проверял");
@@ -1342,6 +1356,20 @@ export default function App() {
 
         return null;
       })}
+      {debugOpen ? (
+        <PanelShell key="debugger" title="Debugger" onClose={() => setDebugOpen(false)}>
+          <div className="sidebar__section">
+            <div className="sidebar__section-title">Debugger</div>
+            <div className="hint">
+              Панель Debugger (MVP). Открытие: кнопка <b>Debug</b> или хоткей <b>Alt+Ctrl+E</b>.
+              <br />
+              Дальше: Errors / Snapshots / Network / Models / Tools + Copy bundle.
+            </div>
+          </div>
+          <div className="placeholder">Скоро.</div>
+        </PanelShell>
+      ) : null}
+
     </div>
   );
 
@@ -1375,6 +1403,16 @@ export default function App() {
           </div>
 
           <div className="topbar__spacer" />
+
+          <button
+            type="button"
+            className="ghost-link"
+            onClick={() => setDebugOpen((v) => !v)}
+            data-tip="Отладчик (Alt+Ctrl+E)"
+            aria-label="Отладчик (Alt+Ctrl+E)"
+          >
+            Debug
+          </button>
 
           <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
             API Docs

@@ -63,6 +63,7 @@
 
 ### B2.0 UI Error Debugger / обработчик ошибок (обязательный слой)
 - [ ] Реализовать глобальный слой ошибок UI (см. `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`, раздел 1.0):
+  - [ ] Спецификация сквозного Debugger: `debugger/README.md`
   - [ ] нормализация в единый формат UiError (scope/severity/title/message/details/ctx/dedupe/actions)
   - [ ] drawer “Ошибки” + глобальный индикатор + dedupe/throttle (без спама)
   - [ ] интеграция: Run / API / Models / Graph / Tools + ErrorBoundary + unhandledrejection/onerror

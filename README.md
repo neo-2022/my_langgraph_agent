@@ -74,13 +74,16 @@ tmux ls
 
 - `agent/` — LangGraph проект (Python)
 - `ui/` — React UI (Vite)
+- `debugger/` — модуль сквозного Debugger (спека + реализация)
 - `run.sh` — запуск всего одной командой
 
 Документация:
 - `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md` — единый источник правды по UI/Graph/Run/Debugger
+- `debugger/README.md` — подробная спецификация сквозного Debugger (фон + панель + события + корреляция)
 
-## UI Error Debugger (слой обработки ошибок в UI)
+## Сквозной Debugger (UI/Run/Graph/Models/Tools/Network)
 - Единый слой ошибок для всего интерфейса: Run stream / API / UI proxy / Graph / Models / Tools / React.
+- См. подробную спецификацию: `debugger/README.md`.
 - Нормализация ошибок в формат UiError (scope/severity/title/message/details/ctx/dedupe/actions).
 - Отображение: глобальный индикатор + drawer “Ошибки”, без спама (dedupe/throttle).
 - Действия: copy details, переход к контексту (run_id/node_id/span_id), retry, restart LangGraph, reload.

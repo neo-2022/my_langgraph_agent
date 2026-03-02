@@ -88,6 +88,7 @@
 - действия: copy details, переход к контексту, retry, restart LangGraph, reload
 
 Спецификация: `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`, раздел 1.0.
+- Подробная концепция сквозного Debugger: `debugger/README.md`.
 
 
 ### B2.1 Split View (обязательно)

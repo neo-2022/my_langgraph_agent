@@ -2,7 +2,7 @@
 # scripts/verify_integrity.py
 # Проверка инвариантов репозитория (минимальный "gate"):
 # - ключевые якоря в документах (Debugger Level 0 / чеклист)
-# - Level 0 реально стоит в ui/src/main.jsx до React render
+# - Level 0 реально инициализируется в ui/src/main.jsx до React render
 # - в git нет мусора типа __pycache__/ *.pyc в отслеживаемых файлах
 #
 # Запуск:
@@ -16,15 +16,19 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
 def read(p: str) -> str:
     return (ROOT / p).read_text(encoding="utf-8")
+
 
 def fail(msg: str) -> None:
     print(f"FAIL: {msg}", file=sys.stderr)
     sys.exit(1)
 
+
 def ok(msg: str) -> None:
     print(f"OK: {msg}")
+
 
 def git(*args: str) -> str:
     r = subprocess.run(["git", *args], cwd=str(ROOT), text=True, capture_output=True)
@@ -32,13 +36,16 @@ def git(*args: str) -> str:
         fail(f"git {' '.join(args)}: {r.stderr.strip() or r.stdout.strip()}")
     return r.stdout
 
+
 def require_contains(text: str, needle: str, where: str) -> None:
     if needle not in text:
         fail(f"{where}: missing required text: {needle!r}")
 
+
 def require_regex(text: str, pattern: str, where: str) -> None:
     if not re.search(pattern, text, flags=re.M | re.S):
         fail(f"{where}: missing required pattern: {pattern!r}")
+
 
 def main() -> None:
     # --- 1) Docs anchors ---
@@ -49,25 +56,34 @@ def main() -> None:
     require_contains(checklist, "DebugEvent", "CHECKLIST")
     require_contains(checklist, "debug_ref", "CHECKLIST")
 
-    spec = read("debugger/README.md")
-    require_contains(spec, "## 0.1) Bootstrap Layer (Level 0)", "debugger/README.md")
-    require_contains(spec, "Точка интеграции в этом репозитории", "debugger/README.md")
-    require_contains(spec, "ui/src/main.jsx", "debugger/README.md")
+    # Спека переехала в ui/src/debugger/README.md
+    spec_path = "ui/src/debugger/README.md"
+    spec = read(spec_path)
+    require_contains(spec, "## 0.1) Bootstrap Layer (Level 0)", spec_path)
+    require_contains(spec, "Точка интеграции в этом репозитории", spec_path)
+    require_contains(spec, "ui/src/main.jsx", spec_path)
 
     ok("docs anchors present")
 
     # --- 2) Level 0 before render in ui/src/main.jsx ---
     main_js = read("ui/src/main.jsx")
 
-    # must define initDebuggerLevel0
-    require_contains(main_js, "function initDebuggerLevel0()", "ui/src/main.jsx")
+    # must import initDebuggerLevel0 from ./debugger/level0.js
+    require_regex(
+        main_js,
+        r'import\s+\{\s*initDebuggerLevel0\s*\}\s+from\s+"\.\/debugger\/level0\.js"\s*;',
+        "ui/src/main.jsx",
+    )
 
     # must call init before createRoot(...).render
     pos_init = main_js.find("initDebuggerLevel0();")
     if pos_init < 0:
         fail("ui/src/main.jsx: missing initDebuggerLevel0(); call")
 
-    m = re.search(r'createRoot\(\s*document\.getElementById\("root"\)\s*\)\.render\(', main_js)
+    m = re.search(
+        r'createRoot\(\s*document\.getElementById\("root"\)\s*\)\.render\(',
+        main_js,
+    )
     if not m:
         fail('ui/src/main.jsx: missing createRoot(document.getElementById("root")).render(')
 
@@ -88,6 +104,7 @@ def main() -> None:
     ok("no tracked __pycache__/pyc")
 
     print("ALL CHECKS PASSED")
+
 
 if __name__ == "__main__":
     main()

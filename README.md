@@ -1,63 +1,22 @@
 # my_langgraph_agent
 
-Локальный LangGraph-агент (ReAct) с Ollama + локальный UI “мини-Studio” (React/Vite) и единая точка входа (UI Proxy).
+Репозиторий для локального LangGraph-агента + React UI.
 
-Проект устроен так, чтобы:
-- локальная часть (Ollama) жила в одном виртуальном окружении без “облачных” зависимостей
-- облачные провайдеры (OpenAI/Anthropic и т.д.) позже добавлялись в отдельном окружении (без конфликтов пакетов)
-
----
-
-## Быстрый старт (одна команда)
-
-Из корня проекта:
-
+## Запуск (tmux)
+Запуск всего:
 ~~~bash
-~/my_langgraph_agent/run.sh
+cd ~/my_langgraph_agent
+./run.sh
 ~~~
 
-Скрипт поднимет (или оставит запущенными) сервисы в tmux:
-- LangGraph API
-- UI Proxy (единая точка входа для React UI)
-- React UI (основной UI)
+Порты:
+- UI: http://127.0.0.1:5174
+- API Docs: http://127.0.0.1:2024/docs
+- UI Proxy: http://127.0.0.1:8090
 
----
-
-## Адреса (что где открывать)
-
-- LangGraph API: http://127.0.0.1:2024
-- Документация API: http://127.0.0.1:2024/docs
-- UI Proxy (проксирует `/api/*` и `/ui/*`): http://127.0.0.1:8090
-- React UI (Vite): http://127.0.0.1:5174
-
-Важно:
-- React UI запросы к LangGraph делает через `/api/...` (через UI Proxy)
-- модели/настройки идут через `/ui/...` (например `/ui/models`) — тоже через UI Proxy
-
----
-
-## Как смотреть логи (tmux)
-
-Подключиться к конкретному сервису:
-
-~~~bash
-tmux attach -t langgraph
-tmux attach -t ui_proxy
-tmux attach -t ui
-~~~
-
-Выйти из tmux (не останавливая сервис): Ctrl+B, затем D.
-
-Прокрутка логов вверх (copy-mode):
-- Ctrl+B, затем [
-- листать стрелками / PageUp / PageDown
-- выйти: q
-
-Проверить, что запущено:
-
-~~~bash
-tmux ls
-~~~
+tmux:
+- attach: `tmux attach -t <session>`
+- dettach: `Ctrl+B` затем `D`
 
 ---
 
@@ -74,16 +33,16 @@ tmux ls
 
 - `agent/` — LangGraph проект (Python)
 - `ui/` — React UI (Vite)
-- `debugger/` — модуль сквозного Debugger (спека + реализация)
+- `ui/src/debugger/` — модуль сквозного Debugger (реализация Level 0/Level 1 в UI)
 - `run.sh` — запуск всего одной командой
 
 Документация:
 - `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md` — единый источник правды по UI/Graph/Run/Debugger
-- `debugger/README.md` — подробная спецификация сквозного Debugger (фон + панель + события + корреляция)
+- `ui/src/debugger/README.md` — подробная спецификация сквозного Debugger (фон + панель + события + корреляция)
 
 ## Сквозной Debugger (UI/Run/Graph/Models/Tools/Network)
 - Единый слой ошибок для всего интерфейса: Run stream / API / UI proxy / Graph / Models / Tools / React.
-- См. подробную спецификацию: `debugger/README.md`.
+- См. подробную спецификацию: `ui/src/debugger/README.md`.
 - Нормализация ошибок в формат UiError (scope/severity/title/message/details/ctx/dedupe/actions).
 - Отображение: глобальный индикатор + drawer “Ошибки”, без спама (dedupe/throttle).
 - Действия: copy details, переход к контексту (run_id/node_id/span_id), retry, restart LangGraph, reload.
@@ -103,8 +62,21 @@ tmux ls
 (по желанию) вставь вывод:
 
 ~~~bash
-tmux ls
+cd ~/my_langgraph_agent
+git status -sb
 git log -1 --oneline
 ~~~
 
-Вся история зафиксирована в репозитории (код + README/TASKS/ROADMAP/CHECKLIST_UI_GRAPH_RUN_DEBUGGER).
+---
+
+## Полезные файлы UI
+
+- `ui/src/App.jsx` — центральная сборка UI (вкладки, SplitView, Run)
+- `ui/src/GraphView.jsx` — отрисовка графа
+- `ui/src/SplitView.jsx` — split UX
+- `ui/src/debugger/core.js` — Level 1 core (адаптер к Level 0)
+- `ui/src/debugger/level0.js` — Level 0 (bootstrap, source of truth)
+- `agent/src/react_agent/ui_proxy.py` — UI Proxy (эндпоинты /ui/*)
+- `scripts/verify_integrity.py` — gate-проверки инвариантов
+- `scripts/safe_edit.py` — безопасные правки файлов
+

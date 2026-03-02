@@ -3,7 +3,7 @@
 ## 0) TL;DR
 - Сейчас делаем: зафиксировали концепцию **сквозного Debugger** (спека) и синхронизируем корневую документацию под неё.
 - Блокер: без сквозного Debugger сложно воспроизводить и локализовать баги UI (в т.ч. “пустой граф”) и проблемы Run/Models/Tools/Network.
-- Следующий шаг: закоммитить документацию (debugger/README.md + ссылки в README/ROADMAP/TASKS/чеклист), затем начать реализацию **B2.0 UI Error Debugger** по чеклисту (без хардкода).
+- Следующий шаг: закоммитить документацию (ui/src/debugger/README.md + ссылки в README/ROADMAP/TASKS/чеклист), затем начать реализацию **B2.0 UI Error Debugger** по чеклисту (без хардкода).
 
 ## 1) Контекст проекта (постоянное)
 - Цель проекта: локальный “мини-Studio” для LangGraph-агента: Run (stream), Graph (визуализация), Split, Execution Journal, Debugger и дальнейшая IDE-подобная отладка (breakpoints/step).
@@ -14,7 +14,7 @@
 - Основные модули/папки:
   - `agent/` — LangGraph агент (Python)
   - `ui/` — React/Vite UI
-  - `debugger/` — модуль сквозного Debugger (спека + будущая реализация)
+  - `ui/src/debugger/` — модуль сквозного Debugger (спека + будущая реализация)
   - `run.sh` — запуск всего проекта в tmux
 
 ## 2) Текущая задача (ONE focus)
@@ -33,7 +33,7 @@
 Ожидаемое поведение: граф всегда строится автоматически, без ручных “пинков”.
 
 ## 3) Что сделано недавно
-- Создан модуль `debugger/` и зафиксирована полная спека: `debugger/README.md`.
+- Создан модуль `ui/src/debugger/` и зафиксирована полная спека: `ui/src/debugger/README.md`.
 - Корневая документация синхронизирована ссылками на сквозной Debugger: README/ROADMAP/TASKS/чеклист.
 
 ## 4) Известные проблемы / долги
@@ -47,7 +47,7 @@
 ## 5) Ссылки
 - README: README.md
 - Чеклист UI/Graph/Run/Debugger: CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md
-- Спека сквозного Debugger: debugger/README.md
+- Спека сквозного Debugger: ui/src/debugger/README.md
 - План/таски: TASKS.md, ROADMAP.md
 - Важные файлы (UI):
   - `ui/src/App.jsx` — tabs/topbar/Run/Journal/Graph wiring

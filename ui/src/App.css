@@ -224,6 +224,9 @@ a:hover {
   padding: 6px 4px;
   overflow: hidden; /* ничего не должно вылезать */
 
+  position: relative;
+  z-index: 0;
+
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 12px;
 
@@ -251,8 +254,18 @@ a:hover {
   border-color: rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.92);
   font-weight: 650;
+}
+
+.rail-btn--active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6),
     inset 0 0 12px rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+}
 }
 
 /* Rail button text: vertical (independent from tab text) */

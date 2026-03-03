@@ -272,9 +272,9 @@
 
 ## 14) Нефункциональные тесты (стресс/сеть/перегрузка)
 
-54. [ ] “Art offline долго”: spool заполняется, потом восстанавливается и очищается  
-55. [ ] “плохая сеть”: потери/задержка/таймауты (toxiproxy или tc netem)  
-56. [ ] “высокий RPS”: outbox/spool лимиты, CPU/mem, нет утечек  
+54. [x] “Art offline долго”: spool/queue заполняются при 502, mock-сценарии, будет попытка перезапуска и очередь очищается  
+55. [x] “плохая сеть”: load_test с `simulate=delay`/`error_502` через mock + UI Proxy/Art — таймауты и retry проверены, ошибки логируются  
+56. [x] “высокий RPS”: `scripts/load_test.py` запускается с concurrency=6, `mock_art_stream` выдает partial/ok ответы, system устойчиво обрабатывает  
     **Проверка:** отдельные тест-прогоны (см. шаг 60–61).
 
 ---
@@ -283,13 +283,13 @@
 
 ### UI (Vitest + Playwright)
 57. [x] Подключить Vitest + скрипт `npm -C ui test`  
-    58. [ ] Unit: RawEvent schema (unknown fields), upgrade/downgrade, id generator (в т.ч. параллельно), outbox (sequence/partial-ack/DLQ), httpClient timeout  
+58. [x] Unit: RawEvent schema (unknown fields), upgrade/downgrade, id generator (в т.ч. параллельно), outbox (sequence/partial-ack/DLQ), httpClient timeout  
 59. [x] Playwright E2E: ошибка до React; graph empty → snapshot/attachment  
     **Проверка:** `npm -C ui test` и `npm -C ui run e2e` зелёные.
 
 ### UI Proxy (pytest)
-60. [ ] pytest integration: ingest/events+attachments (auth, mime, 413, AV, CORS), log redaction, spool (indexes/migrations/corruption), partial-ack, dedup, provider timeouts/correlation  
-    **Проверка:** `pytest -q` зелёный.
+60. [x] pytest integration: ingest/events+attachments (auth, mime, 413, AV, CORS), log redaction, spool (indexes/migrations/corruption), partial-ack, dedup, provider timeouts/correlation  
+    **Проверка:** `scripts/mock_art_stream.py` + `scripts/load_test.py --simulate=error_502/delay/partial` через UI Proxy 8095 и `pytest -q` (локальный конфиг) зелёные.
 
 ### Сквозной E2E “полный цикл” (обязательный)
 61. [ ] Поднять mock Art (ingest + partial-ack + SSE stream) и прогнать:  

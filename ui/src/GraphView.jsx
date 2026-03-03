@@ -44,11 +44,8 @@ function applyStoredPositions(nodes, stored, direction) {
   if (!stored || typeof stored !== "object" || !nodes.length) {
     return nodes;
   }
-  const positions = stored.positions || {};
-  const metadataDirection = stored.direction;
-  if (metadataDirection && String(metadataDirection) !== String(direction)) {
-    return nodes;
-  }
+  const entry = stored[String(direction)] || {};
+  const positions = entry.positions || {};
   return nodes.map((node) => {
     const id = String(node?.id ?? "");
     if (!id) return node;
@@ -87,12 +84,10 @@ function persistStoredPositions(assistantId, nodes, direction) {
     payload[id] = { x, y };
   });
   if (!Object.keys(payload).length) return;
-  const stored = {
-    direction: String(direction || ""),
-    positions: payload,
-  };
+  const existing = readStoredPositions(assistantId) || {};
+  existing[String(direction)] = { positions: payload };
   try {
-    window.localStorage.setItem(key, JSON.stringify(stored));
+    window.localStorage.setItem(key, JSON.stringify(existing));
   } catch {
     // ignore
   }
@@ -401,6 +396,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const rfRef = useRef(null);
   const wrapRef = useRef(null);
   const [hasViewportSize, setHasViewportSize] = useState(false);
+  const manualPositionsRef = useRef(false);
   const manualPositionsRef = useRef(false);
 
   // Минимальный "пинок":

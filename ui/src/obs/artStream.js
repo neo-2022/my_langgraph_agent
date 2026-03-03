@@ -197,3 +197,5 @@ export function startArtStream(options = {}) {
   client.start();
   return client;
 }
+
+export { ArtStreamClient };

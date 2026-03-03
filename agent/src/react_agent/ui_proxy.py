@@ -1017,6 +1017,8 @@ async def ui_art_stream(request: Request, cursor: Optional[str] = None) -> Strea
                                 break
                             if chunk:
                                 yield chunk
+                    except httpx.StreamClosed:
+                        return
                     finally:
                         try:
                             await resp.aclose()

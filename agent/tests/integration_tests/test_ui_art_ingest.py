@@ -270,7 +270,7 @@ async def test_ingest_attachments_detects_malware(monkeypatch, ingest_client):
 @pytest.mark.anyio
 async def test_attachment_scanner_update_not_configured(monkeypatch, proxied_client):
     client, _ = proxied_client
-    monkeypatch.delenv("ATTACHMENT_SCANNER_UPDATE_CMD", raising=False)
+    monkeypatch.setenv("ATTACHMENT_SCANNER_UPDATE_CMD", "")
     response = await client.post("/ui/attachments/update-scanner")
     assert response.status_code == 404
 

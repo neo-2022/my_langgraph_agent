@@ -9,13 +9,13 @@
 - Цель проекта: локальный “мини-Studio” для LangGraph-агента: Run (stream), Graph (визуализация), Split, Execution Journal, Debugger и дальнейшая IDE-подобная отладка (breakpoints/step).
 - Стек/язык: React (Vite) UI, backend LangGraph локально, UI Proxy как единая точка входа.
 - Как запустить локально:
-  - `~/my_langgraph_agent/run.sh`
+  - `~/my_langgraph_agent/run.sh` (копирует `systemd/*.service` и включает LangGraph/UI Proxy/React UI через `systemctl --user enable --now`)
   - Порты: UI http://127.0.0.1:5174, API Docs http://127.0.0.1:2024/docs, UI Proxy http://127.0.0.1:8090
 - Основные модули/папки:
   - `agent/` — LangGraph агент (Python)
   - `ui/` — React/Vite UI
   - `ui/src/debugger/` — модуль сквозного Debugger (спека + будущая реализация)
-  - `run.sh` — запуск всего проекта в tmux
+  - `run.sh` — deploy systemd-сервисов (LangGraph, UI Proxy, React UI)
 
 ## 2) Текущая задача (ONE focus)
 **Задача:** Сквозной Debugger (Debugger-1) как инфраструктура диагностики для всего UI: ошибки/события/снапшоты/корреляция.

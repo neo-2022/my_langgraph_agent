@@ -5,6 +5,17 @@ import Tooltip from "./Tooltip.jsx";
  * SplitView
  * modes: "run" | "split"
  */
+function getClientX(event) {
+  if (!event) return null;
+  if ("touches" in event && event.touches?.[0]) {
+    return event.touches[0].clientX;
+  }
+  if ("changedTouches" in event && event.changedTouches?.[0]) {
+    return event.changedTouches[0].clientX;
+  }
+  return event.clientX ?? null;
+}
+
 export default function SplitView({
   mode,
   onModeChange, // eslint-disable-line no-unused-vars
@@ -38,31 +49,35 @@ export default function SplitView({
     return () => window.removeEventListener("resize", calc);
   }, []);
 
-  const startDrag = (e) => {
+  const startDrag = (event) => {
     if (mode !== "split" || isNarrow) return;
     const root = rootRef.current;
-    if (!root) return;
+    const clientX = getClientX(event);
+    if (!root || typeof clientX !== "number" || Number.isNaN(clientX)) return;
 
     const rect = root.getBoundingClientRect();
     const curPct = leftPct;
 
     dragRef.current = {
       active: true,
-      startX: e.clientX,
+      startX: clientX,
       startPct: curPct,
-      rectLeft: rect.left,
-      rectW: rect.width,
+      rectW: rect.width || 1,
     };
     setIsDragging(true);
+    event?.preventDefault?.();
 
-    const onMove = (ev) => {
+    const onMove = (moveEvent) => {
+      moveEvent?.preventDefault?.();
       const st = dragRef.current;
       if (!st.active) return;
 
-      const dx = ev.clientX - st.startX;
+      const moveX = getClientX(moveEvent);
+      if (typeof moveX !== "number" || Number.isNaN(moveX)) return;
+
+      const dx = moveX - st.startX;
       const px = (st.startPct / 100) * st.rectW + dx;
       const pct = (px / st.rectW) * 100;
-
       const clamped = Math.max(22, Math.min(78, pct));
       setLeftPct(clamped);
     };
@@ -72,10 +87,16 @@ export default function SplitView({
       setIsDragging(false);
       window.removeEventListener("mousemove", onMove, true);
       window.removeEventListener("mouseup", onUp, true);
+      window.removeEventListener("touchmove", onMove, true);
+      window.removeEventListener("touchend", onUp, true);
+      window.removeEventListener("touchcancel", onUp, true);
     };
 
     window.addEventListener("mousemove", onMove, true);
     window.addEventListener("mouseup", onUp, true);
+    window.addEventListener("touchmove", onMove, { capture: true, passive: false });
+    window.addEventListener("touchend", onUp, true);
+    window.addEventListener("touchcancel", onUp, true);
   };
 
   return (
@@ -97,6 +118,7 @@ export default function SplitView({
             <div
               className="sv__divider"
               onMouseDown={startDrag}
+              onTouchStart={startDrag}
               role="separator"
               aria-orientation="vertical"
               aria-label="Resize"

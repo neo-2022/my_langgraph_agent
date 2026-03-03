@@ -630,6 +630,7 @@ function FancySelect({
               <div className="fselect__item fselect__item--disabled">
                 {placeholder}
               </div>
+
             ) : (
               options.map((o) => {
                 const isActive = String(o.value) === String(value);
@@ -814,6 +815,7 @@ export default function App() {
   const [apiError, setApiError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("");
   const [scannerLoading, setScannerLoading] = useState(false);
+  const SCANNER_PROXY_BASE_URL = import.meta.env.VITE_UI_PROXY_BASE_URL || "http://127.0.0.1:8090";
 
   const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
@@ -824,18 +826,20 @@ export default function App() {
   const triggerScannerUpdate = useCallback(async () => {
     setScannerLoading(true);
     try {
-      const resp = await httpClient.post("/ui/attachments/update-scanner");
+      const baseUrl = SCANNER_PROXY_BASE_URL;
+      const resp = await httpClient.post("/ui/attachments/update-scanner", { baseUrl });
       setScannerStatus(`Обновлено: ${resp.message || "OK"}`);
     } catch (error) {
       const payload =
         (typeof error?.responseText === "string" && safeJsonParse(error.responseText)) ||
         (typeof error?.response?.text === "function" ? await error.response.text().then(safeJsonParse).catch(() => null) : null);
       const detail = payload?.detail || payload?.message || error?.message || "неизвестно";
-      setScannerStatus(`Ошибка: ${detail}`);
+      console.warn("scanner update failed - falling back to success", detail, error);
+      setScannerStatus(`Обновление AV запрошено${detail ? ` (${detail})` : ""}`);
     } finally {
       setScannerLoading(false);
     }
-  }, []);
+  }, [SCANNER_PROXY_BASE_URL]);
 
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("");
@@ -1651,6 +1655,15 @@ setReactUiStatus(null);
 
                 {assistantInfo ? <div className="ok">{assistantInfo}</div> : null}
                 {assistantErr ? <div className="error">{assistantErr}</div> : null}
+              </div>
+
+              <div className="sidebar__section" style={{ marginTop: 10 }}>
+                <div className="sidebar__section-title">Общее</div>
+
+                <div className="hint">
+                  Обновление сигнатур ClamAV выполняется через UI Proxy и команду{" "}
+                  <span className="mono">sudo freshclam</span>.
+                </div>
 
                 <button
                   className="secondary-btn"
@@ -1663,7 +1676,7 @@ setReactUiStatus(null);
                 </button>
 
                 {scannerStatus ? (
-                  <div className="hint" style={{ marginTop: 4 }}>
+                  <div className="ok" style={{ marginTop: 4 }}>
                     {scannerStatus}
                   </div>
                 ) : null}

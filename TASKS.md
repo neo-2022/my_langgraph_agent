@@ -19,7 +19,7 @@
 - [x] Подключен Ollama через `langchain-ollama` (ChatOllama)
 - [x] Добавлены tools: list/set model + probe tool_calls
 - [x] Settings UI (локально на 8088) работает
-- [x] `run.sh` запускает всё в tmux
+- [x] `run.sh` включает LangGraph/UI Proxy/React UI как systemd-сервисы (`systemctl --user enable --now`)
 - [x] GitHub репозиторий создан и push работает
 
 ---
@@ -110,7 +110,7 @@
   - UI Proxy: Start / Stop / Restart
   - React UI: Restart
   - Open: UI / API Docs / UI Proxy health
-  - Logs: tail (langgraph / ui_proxy / ui) из tmux
+- Logs: смотреть `journalctl --user -u my_langgraph.service` и аналогично ui_proxy/react UI
 
 Техническая основа (уже подготовлено):
 - В ui_proxy есть endpoints статусов/управления:

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 /**
@@ -130,40 +130,36 @@ export default function Tooltip({
     }
   }, [open, scopeEl, scope]);
 
-  if (!tip) return children;
+  if (!tip || !isValidElement(children)) return children;
 
-  // Должен быть один React-element (button/div). И главное: НЕ ломаем исходный ref.
+  // Должен быть один React-element (button/div). НЕ читаем element.ref напрямую (React 19).
   const el = children;
-  const originalRef = el?.ref;
+  const originalRef = el.props?.ref;
 
-  const child = {
-    ...el,
-    props: {
-      ...el.props,
-      ref: (node) => {
-        hostRef.current = node;
-        setAnyRef(originalRef, node);
-      },
-      onMouseEnter: (e) => {
-        el.props?.onMouseEnter?.(e);
-        setOpen(true);
-      },
-      onMouseLeave: (e) => {
-        el.props?.onMouseLeave?.(e);
-        setOpen(false);
-      },
-      onFocus: (e) => {
-        el.props?.onFocus?.(e);
-        setOpen(true);
-      },
-      onBlur: (e) => {
-        el.props?.onBlur?.(e);
-        setOpen(false);
-      },
-      "aria-label": el.props?.["aria-label"] || tip,
-      tabIndex: el.props?.tabIndex ?? 0,
+  const child = cloneElement(el, {
+    ref: (node) => {
+      hostRef.current = node;
+      setAnyRef(originalRef, node);
     },
-  };
+    onMouseEnter: (e) => {
+      el.props?.onMouseEnter?.(e);
+      setOpen(true);
+    },
+    onMouseLeave: (e) => {
+      el.props?.onMouseLeave?.(e);
+      setOpen(false);
+    },
+    onFocus: (e) => {
+      el.props?.onFocus?.(e);
+      setOpen(true);
+    },
+    onBlur: (e) => {
+      el.props?.onBlur?.(e);
+      setOpen(false);
+    },
+    "aria-label": el.props?.["aria-label"] || tip,
+    tabIndex: el.props?.tabIndex ?? 0,
+  });
 
   // Portal target
   const target = scope === "drawer" ? scopeEl : document.body;

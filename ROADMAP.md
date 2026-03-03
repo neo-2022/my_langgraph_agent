@@ -31,7 +31,7 @@
 - Создан проект в `~/my_langgraph_agent`
 - `venv` (Python 3.12)
 - зависимости приведены в порядок (в т.ч. protobuf)
-- `run.sh` поднимает всё в tmux
+- `run.sh` копирует systemd-сервисы и включает (enable+start) LangGraph/UI Proxy/React UI через `systemctl --user`
 
 ### 1.2 LangGraph агент
 - LangGraph проект в `agent/`
@@ -41,7 +41,7 @@
 ### 1.3 Tools (управление/диагностика)
 - list/set модели Ollama
 - probe tool_calls для модели/массово
-- restart LangGraph через tmux (для применения настроек)
+- restart LangGraph через systemd-сервис (для применения настроек)
 
 ### 1.4 React UI (Vite)
 - UI на `http://127.0.0.1:5174`

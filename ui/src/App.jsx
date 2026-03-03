@@ -7,6 +7,7 @@ import SplitView from "./SplitView.jsx";
 import { getUiErrorCore } from "./debugger/core.js";
 import { fetchClientInfo } from "./obs/clientInfo.js";
 import { httpClient } from "./obs/httpClient.js";
+import { startArtStream } from "./obs/artStream.js";
 
 
   // ----------------------------
@@ -815,7 +816,7 @@ export default function App() {
   const [apiError, setApiError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("");
   const [scannerLoading, setScannerLoading] = useState(false);
-  const SCANNER_PROXY_BASE_URL = import.meta.env.VITE_UI_PROXY_BASE_URL || "http://127.0.0.1:8090";
+  const UI_PROXY_BASE_URL = import.meta.env.VITE_UI_PROXY_BASE_URL || "http://127.0.0.1:8090";
 
   const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
@@ -826,7 +827,7 @@ export default function App() {
   const triggerScannerUpdate = useCallback(async () => {
     setScannerLoading(true);
     try {
-      const baseUrl = SCANNER_PROXY_BASE_URL;
+      const baseUrl = UI_PROXY_BASE_URL;
       const resp = await httpClient.post("/ui/attachments/update-scanner", { baseUrl });
       setScannerStatus(`Обновлено: ${resp.message || "OK"}`);
     } catch (error) {
@@ -839,7 +840,14 @@ export default function App() {
     } finally {
       setScannerLoading(false);
     }
-  }, [SCANNER_PROXY_BASE_URL]);
+  }, [UI_PROXY_BASE_URL]);
+
+  useEffect(() => {
+    const agent = startArtStream({ baseUrl: UI_PROXY_BASE_URL });
+    return () => {
+      agent?.stop?.();
+    };
+  }, [UI_PROXY_BASE_URL]);
 
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("");

@@ -25,7 +25,7 @@ function estimateSize(value) {
   }
 }
 
-function pushObservabilityGap(name, payload = {}) {
+export function pushObservabilityGap(name, payload = {}) {
   try {
     if (typeof window === "undefined") return;
     const target = window.__DBG0__;

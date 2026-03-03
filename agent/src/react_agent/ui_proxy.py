@@ -33,7 +33,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.datastructures import UploadFile
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
@@ -46,6 +46,7 @@ from react_agent.tools import probe_tool_calls, probe_all_models_tool_calls
 
 LANGGRAPH_BASE_URL = os.environ.get("LANGGRAPH_BASE_URL", "http://127.0.0.1:2024")
 ART_INGEST_URL = os.environ.get("ART_INGEST_URL", "http://127.0.0.1:7331/api/v1/ingest")
+ART_STREAM_URL = os.environ.get("ART_STREAM_URL", "http://127.0.0.1:7331/api/v1/stream")
 ART_CONNECT_TIMEOUT = float(os.environ.get("ART_CONNECT_TIMEOUT", "3"))
 ART_READ_TIMEOUT = float(os.environ.get("ART_READ_TIMEOUT", "10"))
 ART_WRITE_TIMEOUT = float(os.environ.get("ART_WRITE_TIMEOUT", "10"))
@@ -440,6 +441,27 @@ def _build_art_timeout() -> httpx.Timeout:
         read=ART_READ_TIMEOUT,
         write=ART_WRITE_TIMEOUT,
     )
+
+
+def _build_art_stream_timeout() -> httpx.Timeout:
+    return httpx.Timeout(timeout=None, connect=ART_CONNECT_TIMEOUT)
+
+
+def _stream_response_headers(upstream_headers: Dict[str, str]) -> Dict[str, str]:
+    headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Client-Id, X-Trace-Id, X-Span-Id, X-Request-Id",
+        "Access-Control-Max-Age": "600",
+    }
+    retry_after = upstream_headers.get("retry-after")
+    if retry_after:
+        headers["Retry-After"] = retry_after
+    return headers
 
 
 def _build_art_envelope(events: List[Dict[str, Any]], client_id: str) -> Dict[str, Any]:
@@ -958,6 +980,56 @@ def ui_ui_proxy_status() -> Dict[str, Any]:
     if err:
         out["systemd_user_service"]["error"] = err
     return out
+
+
+@app.options("/ui/art/stream")
+def ui_art_stream_options() -> Dict[str, Any]:
+    return JSONResponse({"ok": True}, headers=_stream_response_headers({}))
+
+
+@app.get("/ui/art/stream")
+async def ui_art_stream(request: Request, cursor: Optional[str] = None) -> StreamingResponse:
+    params: Dict[str, str] = {}
+    if cursor:
+        params["cursor"] = cursor
+
+    headers = _collect_correlation_headers(request)
+    headers["accept"] = "text/event-stream"
+
+    try:
+        async with httpx.AsyncClient(timeout=_build_art_stream_timeout()) as client:
+            async with client.stream("GET", ART_STREAM_URL, params=params, headers=headers) as resp:
+                if resp.status_code != 200:
+                    detail = ""
+                    try:
+                        detail = (await resp.aread()).decode("utf-8", "ignore")
+                    except Exception:
+                        detail = ""
+                    raise HTTPException(
+                        status_code=resp.status_code,
+                        detail=detail or "Art stream unavailable",
+                    )
+
+                async def event_generator():
+                    try:
+                        async for chunk in resp.aiter_bytes(chunk_size=1024):
+                            if await request.is_disconnected():
+                                break
+                            if chunk:
+                                yield chunk
+                    finally:
+                        try:
+                            await resp.aclose()
+                        except Exception:
+                            pass
+
+                return StreamingResponse(
+                    event_generator(),
+                    headers=_stream_response_headers(dict(resp.headers)),
+                )
+    except httpx.RequestError as exc:
+        logger.warning("art stream request failed: %s", exc)
+        raise HTTPException(status_code=502, detail="Art stream unavailable") from exc
 
 
 @app.post("/ui/ui-proxy/start")

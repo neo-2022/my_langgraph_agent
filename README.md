@@ -27,6 +27,8 @@ systemctl --user enable --now my_langgraph_ui_proxy.service
 systemctl --user enable --now my_langgraph_react_ui.service
 ```
 
+UI Proxy также проксирует SSE downlink `/ui/art/stream` к `ART_STREAM_URL` (по умолчанию `http://127.0.0.1:7331/api/v1/stream`). Укажи нужный URL через переменную окружения `ART_STREAM_URL`, если Art смотрит на другой адрес.
+
 LangGraph, UI Proxy и React UI всегда запускаются как user systemd-сервисы — `tmux` больше не нужен. Если тебе нужно управлять нестандартным сервисом, пропиши `export LANGGRAPH_SYSTEMD_SERVICE=имя_сервиса` в окружении (`~/.bashrc`, `~/.profile` или `.env`, откуда стартует UI Proxy), чтобы кнопка «Перезапустить LangGraph сервер» и ручные `/ui/langgraph/{start,stop}` отправляли команды нужному systemd-сервису.
 
 После этого UI (включая кнопку «Перезапустить LangGraph сервер» и `/ui/langgraph/{start,stop}`) работает через этот сервис.

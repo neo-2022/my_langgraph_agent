@@ -282,9 +282,9 @@
 ## 15) Автотесты (конкретные места и команды)
 
 ### UI (Vitest + Playwright)
-57. [ ] Подключить Vitest + скрипт `npm -C ui test`  
-58. [ ] Unit: RawEvent schema (unknown fields), upgrade/downgrade, id generator (в т.ч. параллельно), outbox (sequence/partial-ack/DLQ), httpClient timeout  
-59. [ ] Playwright E2E: ошибка до React; graph empty → snapshot/attachment  
+57. [x] Подключить Vitest + скрипт `npm -C ui test`  
+    58. [ ] Unit: RawEvent schema (unknown fields), upgrade/downgrade, id generator (в т.ч. параллельно), outbox (sequence/partial-ack/DLQ), httpClient timeout  
+59. [x] Playwright E2E: ошибка до React; graph empty → snapshot/attachment  
     **Проверка:** `npm -C ui test` и `npm -C ui run e2e` зелёные.
 
 ### UI Proxy (pytest)

@@ -30,6 +30,9 @@ env/
 Thumbs.db
 .vscode/
 
+ui/test-results/*
+!ui/test-results/.gitkeep
+
 # Node (future React UI)
 node_modules/
 npm-debug.log*

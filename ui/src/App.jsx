@@ -1639,6 +1639,22 @@ setReactUiStatus(null);
                   {assistantLoading ? "Обновляю…" : "Обновить assistant"}
                 </button>
 
+                <button
+                  className="secondary-btn"
+                  type="button"
+                  onClick={triggerScannerUpdate}
+                  disabled={scannerLoading}
+                  style={{ marginTop: 6 }}
+                >
+                  {scannerLoading ? "Обновление AV..." : "Обновить AV-сканер"}
+                </button>
+
+                {scannerStatus ? (
+                  <div className="hint" style={{ marginTop: 4 }}>
+                    {scannerStatus}
+                  </div>
+                ) : null}
+
                 <div className="hint">
                   ID: <span className="mono">{assistantId || "-"}</span>
                   <br />
@@ -2177,38 +2193,9 @@ setReactUiStatus(null);
           </div>
 
           <div className="topbar__spacer" />
-
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              className="ghost-link"
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: scannerLoading ? "wait" : "pointer",
-                fontSize: 13,
-              }}
-              onClick={triggerScannerUpdate}
-              disabled={scannerLoading}
-            >
-              {scannerLoading ? "Обновление..." : "Обновить AV-сканер"}
-            </button>
-            <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
-              API Docs
-            </a>
-          </div>
-          {scannerStatus ? (
-            <div
-              style={{
-                fontSize: 12,
-                opacity: 0.8,
-                marginLeft: 10,
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              {scannerStatus}
-            </div>
-          ) : null}
+          <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
+            API Docs
+          </a>
         </div>
 
         <div className="content" data-tab={tab}>

@@ -864,14 +864,16 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
     }
 
 
-@app.post("/ui/attachments/update-scanner")
+@app.api_route("/ui/attachments/update-scanner", methods=["GET", "POST"])
 async def ui_update_attachment_scanner() -> Dict[str, Any]:
     cmd = os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", "").strip()
     if not cmd:
         raise HTTPException(status_code=404, detail="scanner update not configured")
+
     ok, msg = _run_attachment_scanner_update(cmd)
     if not ok:
         raise HTTPException(status_code=500, detail=msg)
+
     return {"ok": True, "message": msg}
 
 

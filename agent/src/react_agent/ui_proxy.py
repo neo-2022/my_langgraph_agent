@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import sqlite3
 import subprocess
+import tempfile
 import time
 import uuid
 from datetime import datetime
@@ -272,6 +274,48 @@ def _describe_attachment(filename: str, mime: str, size: int) -> Dict[str, Any]:
         "size": size,
         "render_mode": "download-only",
     }
+
+
+def _scan_attachment(content: bytes) -> Tuple[bool, Optional[str]]:
+    cmd = os.environ.get("ATTACHMENT_SCANNER_CMD", "").strip()
+    if not cmd:
+        return True, None
+
+    args = shlex.split(cmd)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(content)
+            tmp.flush()
+            tmp_path = tmp.name
+        proc = subprocess.run(
+            args + ([tmp_path] if tmp_path else []),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as exc:
+        logger.warning("attachment scanner error: %s", exc)
+        return True, None
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    if proc.returncode == 0:
+        return True, None
+    if proc.returncode == 1:
+        message = (proc.stdout or proc.stderr or "malware detected").strip()
+        return False, message
+    logger.warning(
+        "attachment scanner unexpected returncode=%s stdout=%s stderr=%s",
+        proc.returncode,
+        proc.stdout,
+        proc.stderr,
+    )
+    return True, None
 
 
 async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dict[str, Any]], client_id: str) -> None:
@@ -708,6 +752,11 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
         if size > MAX_ATTACHMENT_BYTES:
             logger.warning("observability_gap.attachment_too_large: %s size=%s", filename, size)
             raise HTTPException(status_code=413, detail="attachment exceeds max size")
+
+        clean, reason = _scan_attachment(content)
+        if not clean:
+            logger.warning("observability_gap.attachment_malware_detected: %s reason=%s", filename, reason)
+            raise HTTPException(status_code=400, detail="attachment flagged as malware")
         if not _matches_magic_bytes(content, mime):
             logger.warning("observability_gap.attachment_magic_mismatch: %s", filename)
             raise HTTPException(status_code=400, detail="attachment content signature mismatch")

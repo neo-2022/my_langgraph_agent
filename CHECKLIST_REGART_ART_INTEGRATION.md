@@ -217,8 +217,8 @@
     **Требование:** >max_bytes → HTTP 413 + `observability_gap.attachment_too_large`  
     **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_large_files`
 
-40. [ ] Антивирус/сканирование вложений (ClamAV или внешний scanner)  
-    **Проверка:** EICAR → отклонение + `observability_gap.attachment_malware_detected` (см. шаг 60).
+40. [x] Антивирус/сканирование вложений (ClamAV или внешний scanner)  
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_detects_malware`
 
 ---
 

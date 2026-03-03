@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import sys
 from pathlib import Path
 from typing import Dict
 from typing import Dict
@@ -249,6 +250,20 @@ async def test_ingest_attachments_rejects_large_files(monkeypatch, ingest_client
     response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
     assert response.status_code == 413
     assert "max size" in response.json().get("detail", "")
+
+
+@pytest.mark.anyio
+async def test_ingest_attachments_detects_malware(monkeypatch, ingest_client):
+    cmd = f"{sys.executable} -c 'import sys; sys.exit(1)'"
+    monkeypatch.setenv("ATTACHMENT_SCANNER_CMD", cmd)
+    headers = {
+        "Authorization": "Bearer ingest-token",
+        "X-Client-Id": "ingest-client",
+    }
+    files = {"file": ("safe.png", b"\x89PNG\r\n\x1a\n", "image/png")}
+    response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
+    assert response.status_code == 400
+    assert "malware" in response.json().get("detail", "")
 
 @pytest.mark.anyio
 async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):

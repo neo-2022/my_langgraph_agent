@@ -210,8 +210,8 @@
 37. [x] `/ui/ingest/events`: auth + pydantic validation + redaction  
     **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_events_requires_auth agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_events_validation_error agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_events_redacts_sensitive_fields`
 
-38. [ ] `/ui/ingest/attachments`: allowlist MIME + magic-bytes check + safe filenames + no inline render  
-    **Проверка:** тесты на mime mismatch + path traversal (см. шаг 60).
+38. [x] `/ui/ingest/attachments`: allowlist MIME + magic-bytes check + safe filenames + no inline render  
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_magic_mismatch agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_path_traversal`
 
 39. [ ] Поведение при слишком большом attachment  
     **Требование:** >max_bytes → HTTP 413 + `observability_gap.attachment_too_large`  

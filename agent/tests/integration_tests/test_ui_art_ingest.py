@@ -206,6 +206,37 @@ async def test_ingest_events_redacts_sensitive_fields(ingest_client):
     assert redacted["password"] == ui_proxy.REDACTED_MARKER
     assert redacted["nested"]["token"] == ui_proxy.REDACTED_MARKER
 
+
+@pytest.mark.anyio
+async def test_ingest_attachments_requires_auth(ingest_client):
+    files = {"file": ("safe.txt", b"ok", "text/plain")}
+    response = await ingest_client.post("/ui/ingest/attachments", files=files)
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_ingest_attachments_rejects_path_traversal(ingest_client):
+    headers = {
+        "Authorization": "Bearer ingest-token",
+        "X-Client-Id": "ingest-client",
+    }
+    files = {"file": ("../evil.png", b"\x89PNG\r\n\x1a\n", "image/png")}
+    response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
+    assert response.status_code == 400
+    assert "unsafe" in response.json().get("detail", "")
+
+
+@pytest.mark.anyio
+async def test_ingest_attachments_rejects_magic_mismatch(ingest_client):
+    headers = {
+        "Authorization": "Bearer ingest-token",
+        "X-Client-Id": "ingest-client",
+    }
+    files = {"file": ("image.png", b"notpng", "image/png")}
+    response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
+    assert response.status_code == 400
+    assert "signature" in response.json().get("detail", "")
+
 @pytest.mark.anyio
 async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):
     client, spool = proxied_client

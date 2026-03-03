@@ -27,11 +27,12 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.datastructures import UploadFile
 from starlette.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -52,6 +53,19 @@ CLIENT_ID_KEY = "UI_CLIENT_ID"
 INGEST_BEARER_TOKEN = os.environ.get("REGART_INGEST_TOKEN", "")
 
 CORRELATION_HEADER_NAMES = ("x-trace-id", "x-span-id", "x-request-id")
+ALLOWED_ATTACHMENT_MIME = {
+    "image/png",
+    "image/jpeg",
+    "text/plain",
+    "application/json",
+}
+ATTACHMENT_MAGIC_SIGNATURES: Dict[str, List[bytes]] = {
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "application/json": [b"{", b"["],
+}
+MAX_ATTACHMENT_BYTES = int(os.environ.get("ATTACHMENT_MAX_BYTES", str(5_242_880)))
+
 REDACT_SENSITIVE_KEYS = {
     "authorization",
     "api_key",
@@ -231,6 +245,33 @@ def _redact_sensitive_value(value: Any, name: Optional[str] = None) -> Any:
 
 def _redact_event(raw: Dict[str, Any]) -> Dict[str, Any]:
     return _redact_sensitive_value(raw)
+
+
+def _is_safe_filename(name: Optional[str]) -> bool:
+    if not name:
+        return False
+    normalized = name.replace("\\", "/")
+    if normalized.startswith("/") or normalized.startswith(".."):  # absolute or starts with parent
+        return False
+    if ".." in normalized.split("/"):
+        return False
+    return os.path.basename(normalized) == normalized
+
+
+def _matches_magic_bytes(content: bytes, mime: str) -> bool:
+    signatures = ATTACHMENT_MAGIC_SIGNATURES.get(mime)
+    if not signatures:
+        return True
+    return any(content.startswith(sig) for sig in signatures)
+
+
+def _describe_attachment(filename: str, mime: str, size: int) -> Dict[str, Any]:
+    return {
+        "filename": filename,
+        "mime": mime,
+        "size": size,
+        "render_mode": "download-only",
+    }
 
 
 async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dict[str, Any]], client_id: str) -> None:
@@ -647,8 +688,34 @@ async def ui_ingest_events(request: Request, payload: Dict[str, Any]) -> Dict[st
 async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
     client_id = _authorize_ingest(request)
     form = await request.form()
-    files = [value for value in form.values() if hasattr(value, "filename")]
-    return {"ok": True, "client_id": client_id, "files": len(files)}
+    uploads: List[UploadFile] = [value for value in form.values() if isinstance(value, UploadFile)]
+    attachments: List[Dict[str, Any]] = []
+
+    for upload in uploads:
+        filename = upload.filename or "attachment"
+        if not _is_safe_filename(filename):
+            logger.warning("observability_gap.attachment_bad_filename: %s", filename)
+            raise HTTPException(status_code=400, detail="filename contains unsafe segments")
+
+        mime = (upload.content_type or "application/octet-stream").lower()
+        if mime not in ALLOWED_ATTACHMENT_MIME:
+            logger.warning("observability_gap.attachment_bad_mime: %s", mime)
+            raise HTTPException(status_code=400, detail=f"unsupported mime type: {mime}")
+
+        content = await upload.read()
+        await upload.close()
+        if not _matches_magic_bytes(content, mime):
+            logger.warning("observability_gap.attachment_magic_mismatch: %s", filename)
+            raise HTTPException(status_code=400, detail="attachment content signature mismatch")
+
+        attachments.append(_describe_attachment(filename, mime, len(content)))
+
+    return {
+        "ok": True,
+        "client_id": client_id,
+        "attachments": attachments,
+        "files": len(attachments),
+    }
 
 
 @app.post("/ui/model")

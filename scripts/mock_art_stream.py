@@ -2,8 +2,8 @@ import asyncio
 import json
 from typing import Optional
 
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 
 app = FastAPI()
 
@@ -42,6 +42,47 @@ async def stream(cursor: Optional[str] = None, request: Request = None):
     }
     return StreamingResponse(content(), headers=headers)
 
+
+@app.post("/api/v1/ingest")
+async def ingest(payload: dict, request: Request):
+    events = payload.get("events")
+    if not events or not isinstance(events, list):
+        raise HTTPException(status_code=400, detail="missing events")
+    event = events[0]
+    simulate = (event.get("payload") or {}).get("simulate")
+    if simulate == "error_502":
+        return JSONResponse(
+            status_code=502,
+            content={
+                "ok": False,
+                "error": "mock upstream",
+                "results": [
+                    {
+                        "event_id": event.get("event_id"),
+                        "status": "retryable",
+                        "reason": "mock error",
+                    }
+                ],
+            },
+        )
+    if simulate == "delay":
+        await asyncio.sleep(2)
+    if simulate == "partial":
+        return {
+            "ok": True,
+            "results": [
+                {"event_id": event.get("event_id"), "status": "ok"},
+                {"event_id": f"{event.get('event_id')}-dlq", "status": "retryable"},
+            ],
+        }
+    return {"ok": True, "results": [{"event_id": event.get("event_id"), "status": "ok"}]}
+
 if __name__ == "__main__":
+    import argparse
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=7331)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=7331)
+    args = parser.parse_args()
+    uvicorn.run(app, host=args.host, port=args.port)

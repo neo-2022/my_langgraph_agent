@@ -312,6 +312,6 @@
 
 ## 17) Итоговый DoD
 
-65. [ ] Контракт содержит: unknown fields policy, partial-ack format, retry/timeout numbers, DLQ, ordering.  
-66. [ ] Реализованы: outbox+spool, partial-ack, dedup, DLQ+алерты, timeouts, attachment security+413+AV.  
-67. [ ] Пройдены: сквозной E2E полный цикл, rolling upgrade, нефункциональные тесты.
+65. [x] Контракт содержит: unknown fields policy, partial-ack format, retry/timeout numbers, DLQ, ordering.  
+66. [x] Реализованы: outbox+spool, partial-ack, dedup, DLQ+алерты, timeouts, attachment security+413+AV.  
+67. [x] Пройдены: сквозной E2E полный цикл, rolling upgrade, нефункциональные тесты.

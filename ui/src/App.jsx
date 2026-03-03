@@ -827,7 +827,11 @@ export default function App() {
       const resp = await httpClient.post("/ui/attachments/update-scanner");
       setScannerStatus(`Обновлено: ${resp.message || "OK"}`);
     } catch (error) {
-      setScannerStatus(`Ошибка: ${error?.message || "неизвестно"}`);
+      const payload =
+        (typeof error?.responseText === "string" && safeJsonParse(error.responseText)) ||
+        (typeof error?.response?.text === "function" ? await error.response.text().then(safeJsonParse).catch(() => null) : null);
+      const detail = payload?.detail || payload?.message || error?.message || "неизвестно";
+      setScannerStatus(`Ошибка: ${detail}`);
     } finally {
       setScannerLoading(false);
     }
@@ -1639,6 +1643,15 @@ setReactUiStatus(null);
                   {assistantLoading ? "Обновляю…" : "Обновить assistant"}
                 </button>
 
+                <div className="hint">
+                  ID: <span className="mono">{assistantId || "-"}</span>
+                  <br />
+                  Name: <span className="mono">{assistantName || "-"}</span>
+                </div>
+
+                {assistantInfo ? <div className="ok">{assistantInfo}</div> : null}
+                {assistantErr ? <div className="error">{assistantErr}</div> : null}
+
                 <button
                   className="secondary-btn"
                   type="button"
@@ -1654,15 +1667,6 @@ setReactUiStatus(null);
                     {scannerStatus}
                   </div>
                 ) : null}
-
-                <div className="hint">
-                  ID: <span className="mono">{assistantId || "-"}</span>
-                  <br />
-                  Name: <span className="mono">{assistantName || "-"}</span>
-                </div>
-
-                {assistantInfo ? <div className="ok">{assistantInfo}</div> : null}
-                {assistantErr ? <div className="error">{assistantErr}</div> : null}
               </div>
 
             </PanelShell>

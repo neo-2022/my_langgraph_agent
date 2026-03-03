@@ -401,6 +401,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const rfRef = useRef(null);
   const wrapRef = useRef(null);
   const [hasViewportSize, setHasViewportSize] = useState(false);
+  const manualPositionsRef = useRef(false);
 
   // Минимальный "пинок":
   // - ждём 2 кадра (layout -> paint), потом fitView
@@ -644,8 +645,14 @@ setNodes([]);
   }, [edges]);
 
   useEffect(() => {
+    if (!manualPositionsRef.current) return;
     persistStoredPositions(assistantId, nodes, direction);
-  }, [assistantId, nodes]);
+    manualPositionsRef.current = false;
+  }, [assistantId, nodes, direction]);
+
+  useEffect(() => {
+    manualPositionsRef.current = false;
+  }, [assistantId, direction]);
 
   // Tooltip patch for ReactFlow controls
   useEffect(() => {
@@ -709,6 +716,20 @@ setNodes([]);
     onNodeSelected?.("");
     applyFocus("");
   }, [applyFocus, onNodeSelected]);
+
+  const handleNodesChange = useCallback(
+    (changes) => {
+      onNodesChange(changes);
+      if (manualPositionsRef.current) return;
+      const hasPositionChange = changes.some(
+        (change) => String(change?.type || "").toLowerCase() === "position"
+      );
+      if (hasPositionChange) {
+        manualPositionsRef.current = true;
+      }
+    },
+    [onNodesChange]
+  );
 
   const onFlowError = useCallback((id, message) => {
     if (String(id) === "002") return;
@@ -846,16 +867,16 @@ setNodes([]);
 
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative" }}>
         {hasViewportSize ? (
-          <ReactFlow
-            style={{ position: "absolute", inset: 0 }}
-            nodes={nodes}
-            edges={edges}
-            onInit={(inst) => {
-              rfRef.current = inst;
-              kick({ padding: 0.25, duration: 0 });
-            }}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
+            <ReactFlow
+              style={{ position: "absolute", inset: 0 }}
+              nodes={nodes}
+              edges={edges}
+              onInit={(inst) => {
+                rfRef.current = inst;
+                kick({ padding: 0.25, duration: 0 });
+              }}
+              onNodesChange={handleNodesChange}
+              onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             onError={onFlowError}

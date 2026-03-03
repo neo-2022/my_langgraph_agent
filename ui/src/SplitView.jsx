@@ -110,7 +110,15 @@ export default function SplitView({
         </div>
       ) : (
         <div className="sv__split" data-dragging={isDragging ? "1" : "0"}>
-          <div className="sv__pane sv__pane--left" style={{ width: `${leftPct}%` }}>
+          <div
+            className="sv__pane sv__pane--left"
+            style={{
+              width: `${leftPct}%`,
+              flexBasis: `${leftPct}%`,
+              flexGrow: 0,
+              flexShrink: 0,
+            }}
+          >
             {left}
           </div>
 
@@ -127,7 +135,15 @@ export default function SplitView({
             </div>
           </Tooltip>
 
-          <div className="sv__pane sv__pane--right" style={{ width: `${100 - leftPct}%` }}>
+          <div
+            className="sv__pane sv__pane--right"
+            style={{
+              width: `${100 - leftPct}%`,
+              flexBasis: `${100 - leftPct}%`,
+              flexGrow: 0,
+              flexShrink: 0,
+            }}
+          >
             {right}
           </div>
         </div>

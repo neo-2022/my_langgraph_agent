@@ -20,6 +20,8 @@ cd ~/my_langgraph_agent
 export LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service
 ```
 
+UI Proxy уже экспортирует `LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service`, поэтому кнопка «Перезапустить LangGraph сервер» работает через systemd и повторно запускает именно `my_langgraph.service`. Если нужно переопределить имя сервиса — выставь переменную до запуска UI Proxy (в `~/.bashrc`, `~/.profile` или `.env`) и перезапусти `my_langgraph_ui_proxy.service`.
+
 UI Proxy (`my_langgraph_ui_proxy.service`) и React UI (`my_langgraph_react_ui.service`) тоже ожидаются как systemd-сервисы; `run.sh` устанавливает и включают их автоматически. При необходимости можно самостоятельно выполнить:
 
 ```bash
@@ -34,6 +36,11 @@ LangGraph, UI Proxy и React UI всегда запускаются как user 
 После этого UI (включая кнопку «Перезапустить LangGraph сервер» и `/ui/langgraph/{start,stop}`) работает через этот сервис.
 
 ----
+## React UI: Split View и Graph
+
+- Режим Split View запоминает ширину панелей и позволяет перетаскивать делитель: левая и правая панели меняют ширину, а последнее значение хранится в `localStorage`.
+- Вкладка Graph сохраняет пользовательские положения нод по `assistant_id` в `localStorage` и повторно использует их при переключении вкладок/перезагрузке, поэтому вручную смещённые элементы останутся на месте.
+
 ## Как выбрать модель Ollama (через React UI)
 
 1) Открой React UI: http://127.0.0.1:5174  

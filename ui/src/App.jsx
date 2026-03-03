@@ -6,7 +6,7 @@ import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
 import { getUiErrorCore } from "./debugger/core.js";
 import { fetchClientInfo } from "./obs/clientInfo.js";
-import { httpClient } from "./obs/httpClient.js";
+import { httpClient, stream as httpStream } from "./obs/httpClient.js";
 import { startArtStream } from "./obs/artStream.js";
 
 
@@ -1359,7 +1359,7 @@ setReactUiStatus(null);
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
-      const resp = await httpClient.stream("/api/runs/stream", {
+      const resp = await httpStream("/api/runs/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

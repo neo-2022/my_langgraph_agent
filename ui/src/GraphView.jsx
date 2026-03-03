@@ -19,6 +19,76 @@ const graphCache = {
   fingerprint: "",
 };
 
+const GRAPH_POS_STORAGE_PREFIX = "lg_graph_positions:";
+
+function storageKeyForAssistant(assistantId) {
+  if (!assistantId) return null;
+  return `${GRAPH_POS_STORAGE_PREFIX}${String(assistantId)}`;
+}
+
+function readStoredPositions(assistantId) {
+  const key = storageKeyForAssistant(assistantId);
+  if (!key || typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function applyStoredPositions(nodes, stored) {
+  if (!stored || typeof stored !== "object" || !nodes.length) {
+    return nodes;
+  }
+  return nodes.map((node) => {
+    const id = String(node?.id ?? "");
+    if (!id) return node;
+    const storedPos = stored[id];
+    if (
+      storedPos &&
+      typeof storedPos === "object" &&
+      Number.isFinite(Number(storedPos.x)) &&
+      Number.isFinite(Number(storedPos.y))
+    ) {
+      return {
+        ...node,
+        position: {
+          x: Number(storedPos.x),
+          y: Number(storedPos.y),
+        },
+      };
+  }
+  return node;
+});
+}
+
+function persistStoredPositions(assistantId, nodes) {
+  const key = storageKeyForAssistant(assistantId);
+  if (!key || typeof window === "undefined") return;
+  if (!nodes?.length) return;
+  const payload = {};
+  nodes.forEach((node) => {
+    const id = String(node?.id ?? "");
+    if (!id) return;
+    const pos = node?.position;
+    if (!pos) return;
+    const x = Number(pos.x);
+    const y = Number(pos.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    payload[id] = { x, y };
+  });
+  if (!Object.keys(payload).length) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
 function computeGraphFingerprint(apiNodes = [], apiEdges = []) {
   const nodeIds = Array.from(
     new Set(apiNodes.map((node) => String(node?.id ?? "")).filter(Boolean))
@@ -440,13 +510,15 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       const rfEdges = apiEdges.map(rfEdgeFromApi);
 
       const laid = layoutDagre(rfNodes, rfEdges, direction);
+      const storedPositions = readStoredPositions(assistantId);
+      const nodesWithPositions = applyStoredPositions(laid.nodes, storedPositions);
 
       graphCache.direction = direction;
       graphCache.fingerprint = fingerprint;
-      graphCache.nodes = laid.nodes;
+      graphCache.nodes = nodesWithPositions;
       graphCache.edges = laid.edges;
 
-      setNodes(laid.nodes);
+      setNodes(nodesWithPositions);
       setEdges(laid.edges);
       setGraphVersion((v) => v + 1);
 
@@ -557,6 +629,10 @@ setNodes([]);
   useEffect(() => {
     graphCache.edges = edges;
   }, [edges]);
+
+  useEffect(() => {
+    persistStoredPositions(assistantId, nodes);
+  }, [assistantId, nodes]);
 
   // Tooltip patch for ReactFlow controls
   useEffect(() => {

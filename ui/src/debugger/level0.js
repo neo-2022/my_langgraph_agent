@@ -1,3 +1,6 @@
+import { httpClient } from "../obs/httpClient.js";
+import { outbox } from "../obs/outbox.js";
+
 /**
  * Debugger Level 0 (Bootstrap, до React)
  *
@@ -377,6 +380,32 @@ export function initDebuggerLevel0() {
     return () => state.listeners.error.delete(fn);
   }
 
+  function debugEventToRaw(ev) {
+    const payload = ev.payload && typeof ev.payload === "object" ? { ...ev.payload } : {};
+    const ctx = ev.ctx && typeof ev.ctx === "object" ? { ...ev.ctx } : {};
+    return {
+      schema_version: "REGART.Art.RawEvent.v1",
+      event_id: ev.event_id,
+      kind: toStr(ev.name) || "ui.event",
+      scope: toStr(ev.origin || ev.ui?.tab || "ui"),
+      severity: ["debug", "info", "warn", "error", "fatal"].includes(toStr(ev.level)) ? toStr(ev.level) : "info",
+      message: toStr(ev.message) || toStr(ev.name),
+      payload: { ...payload, ui: ev.ui, ctx },
+      context: {
+        trace_id: toStr(ev.trace_id),
+        span_id: toStr(ev.span_id),
+        run_id: toStr(ev.run_id),
+        node_id: toStr(ev.node_id),
+      },
+    };
+  }
+
+  function pushToOutbox(ev) {
+    try {
+      outbox.enqueue(debugEventToRaw(ev)).catch(() => {});
+    } catch {}
+  }
+
   function pushEvent(ev) {
     const e = ev && typeof ev === "object" ? ev : { name: "ui.event", payload: ev };
     const out = {
@@ -404,6 +433,7 @@ export function initDebuggerLevel0() {
     };
 
     ringPush(state.events, "events", "events", out);
+    pushToOutbox(out);
     notify("event", out);
     return out;
   }
@@ -703,15 +733,24 @@ export function initDebuggerLevel0() {
       if (!ep) return { ok: false, error: "empty endpoint" };
 
       try {
-        const r = await fetch(ep, { method });
-        const txt = await r.text().catch(() => "");
+        const resp = await httpClient.request(ep, { method, parseAs: "raw" });
+        const txt = await resp.text().catch(() => "");
         let js = null;
         try {
           js = txt ? JSON.parse(txt) : null;
         } catch {}
-        if (!r.ok) return { ok: false, status: r.status, text: txt, json: js };
-        return { ok: true, status: r.status, text: txt, json: js };
+        if (!resp.ok) return { ok: false, status: resp.status, text: txt, json: js };
+        return { ok: true, status: resp.status, text: txt, json: js };
       } catch (e) {
+        const resp = e?.response;
+        const txt = typeof e?.responseText === "string" ? e.responseText : "";
+        let json = null;
+        try {
+          json = txt ? JSON.parse(txt) : null;
+        } catch {}
+        if (resp) {
+          return { ok: false, status: resp.status, text: txt, json };
+        }
         return { ok: false, error: String(e?.message || e) };
       }
     }

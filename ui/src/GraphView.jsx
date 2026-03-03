@@ -10,11 +10,10 @@ import ReactFlow, {
 import dagre from "dagre";
 import Tooltip from "./Tooltip.jsx";
 import "./GraphView.css";
+import { httpClient } from "./obs/httpClient.js";
 
 async function getJson(url, opts = {}) {
-  const r = await fetch(url, opts);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  return await r.json();
+  return httpClient.get(url, opts);
 }
 
 function inferKindFromId(id) {

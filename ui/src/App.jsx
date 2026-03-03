@@ -5,6 +5,8 @@ import "reactflow/dist/style.css";
 import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
 import { getUiErrorCore } from "./debugger/core.js";
+import { fetchClientInfo } from "./obs/clientInfo.js";
+import { httpClient } from "./obs/httpClient.js";
 
 
   // ----------------------------
@@ -477,47 +479,37 @@ function TipBtn({ label, tip, onClick, children, disabled, style }) {
 }
 
 
+function enrichHttpError(error, path, method) {
+  const text = typeof error?.responseText === "string" ? error.responseText : "";
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {}
+  const hint = payload && typeof payload === "object" ? String(payload.hint_ru || "") : "";
+  const status = error?.status || 0;
+  const message = hint || `HTTP ${status || "?"}: ${text || "ошибка"}`;
+  const err = error instanceof Error ? error : new Error(message);
+  err.message = message;
+  err.__dbg = payload && typeof payload === "object" ? payload : null;
+  err.__http = { status, method, path: String(path || "") };
+  err.__raw = text;
+  return err;
+}
+
 async function getJson(path) {
-  const r = await fetch(path);
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    let payload = null;
-    try {
-      payload = txt ? JSON.parse(txt) : null;
-    } catch {}
-    const hint = payload && typeof payload === "object" ? String(payload.hint_ru || "") : "";
-    const msg = hint || `HTTP ${r.status}: ${txt || "ошибка"}`;
-    const err = new Error(msg);
-    // Важно: отдаём структурированную инфу Debugger-у (без хардкода, только что реально пришло)
-    err.__dbg = payload && typeof payload === "object" ? payload : null;
-    err.__http = { status: r.status, method: "GET", path: String(path || "") };
-    err.__raw = txt;
-    throw err;
+  try {
+    return await httpClient.get(path);
+  } catch (error) {
+    throw enrichHttpError(error, path, "GET");
   }
-  return await r.json();
 }
 
 async function postJson(path, body) {
-  const r = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body ?? {}),
-  });
-  if (!r.ok) {
-    const txt = await r.text().catch(() => "");
-    let payload = null;
-    try {
-      payload = txt ? JSON.parse(txt) : null;
-    } catch {}
-    const hint = payload && typeof payload === "object" ? String(payload.hint_ru || "") : "";
-    const msg = hint || `HTTP ${r.status}: ${txt || "ошибка"}`;
-    const err = new Error(msg);
-    err.__dbg = payload && typeof payload === "object" ? payload : null;
-    err.__http = { status: r.status, method: "POST", path: String(path || "") };
-    err.__raw = txt;
-    throw err;
+  try {
+    return await httpClient.post(path, { body });
+  } catch (error) {
+    throw enrichHttpError(error, path, "POST");
   }
-  return await r.json();
 }
 
 function PanelShell({ title, onClose, children }) {
@@ -757,6 +749,10 @@ export default function App() {
 
   // Debugger Level 1 Core (UiError)
   const uiErrCore = useMemo(() => getUiErrorCore({ capacity: 200 }), []);
+
+  useEffect(() => {
+    fetchClientInfo();
+  }, []);
 
   // Auto-open Debugger panel on error/fatal
   useEffect(() => {
@@ -1333,7 +1329,7 @@ setReactUiStatus(null);
       const ctrl = new AbortController();
       abortRef.current = ctrl;
 
-      const resp = await fetch("/api/runs/stream", {
+      const resp = await httpClient.stream("/api/runs/stream", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

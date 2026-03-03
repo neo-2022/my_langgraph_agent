@@ -263,11 +263,11 @@ a:hover {
   border-radius: inherit;
   border: 2px solid rgba(255, 255, 255, 0.7);
   box-shadow:
-    inset 0 0 8px rgba(255, 255, 255, 0.5),
-    inset 0 0 3px rgba(255, 255, 255, 0.8);
+    inset 0 0 4px rgba(255, 255, 255, 0.8),
+    inset 0 0 8px rgba(255, 255, 255, 0.4);
   pointer-events: none;
-  opacity: 1;
-  background: radial-gradient(circle at center, transparent 50%, rgba(255, 255, 255, 0.25));
+  opacity: 0.9;
+  background: radial-gradient(circle at center, rgba(255, 255, 255, 0.3), transparent 70%);
 }
 
 /* Rail button text: vertical (independent from tab text) */

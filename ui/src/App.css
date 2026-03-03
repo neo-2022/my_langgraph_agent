@@ -606,9 +606,10 @@ a:hover {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.45);
   pointer-events: none;
-  opacity: 0.65;
+  opacity: 0.85;
+  filter: brightness(1.1) blur(0);
 }
 
 .ghost-link {

@@ -495,7 +495,7 @@ async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dic
                 )
                 moved += 1
     if moved:
-        logger.warning("observability_gap.dlq_non_empty: %s events moved to DLQ", moved)
+        logger.warning(f"observability_gap.dlq_non_empty: {moved} events moved to DLQ")
 
 
 def _build_art_timeout() -> httpx.Timeout:
@@ -582,7 +582,7 @@ def _log_provider_event(kind: str, provider_id: str, client_id: str, mode: str, 
     }
     if extra:
         info.update(extra)
-    logger.info("provider.%s %s", kind, info)
+    logger.info(f"provider.{kind} {info}")
 
 
 async def _forward_to_provider(
@@ -595,7 +595,7 @@ async def _forward_to_provider(
     _log_provider_event("request", provider_id, client_id, mode, {"payload_keys": list(payload.keys())})
     try:
         if mode == "art":
-            logger.info("observability_gap.provider_transport_switch: %s -> art", provider_id)
+            logger.info(f"observability_gap.provider_transport_switch: {provider_id} -> art")
             response = await _forward_to_art(payload.get("events", []), client_id, correlation_headers)
             _log_provider_event("response", provider_id, client_id, mode, {"status": response.get("ok")})
             return response
@@ -611,10 +611,10 @@ async def _forward_to_provider(
             _log_provider_event("response", provider_id, client_id, mode, {"status": response.status_code})
             return body
     except httpx.TimeoutException as exc:
-        logger.warning("observability_gap.provider_timeout: %s", exc)
+        logger.warning(f"observability_gap.provider_timeout: {exc}")
         raise HTTPException(status_code=504, detail="provider timeout") from exc
     except httpx.RequestError as exc:
-        logger.warning("observability_gap.provider_request_error: %s", exc)
+        logger.warning(f"observability_gap.provider_request_error: {exc}")
         raise HTTPException(status_code=502, detail="provider request error") from exc
 
 
@@ -890,10 +890,7 @@ async def ui_ingest_events(request: Request, payload: Dict[str, Any]) -> Dict[st
             model = RawEventModel.model_validate(candidate or {})
         except ValidationError as exc:
             logger.warning(
-                "ui_ingest_events: validation failed idx=%s client=%s errors=%s",
-                idx,
-                client_id,
-                exc.errors(),
+                f"ui_ingest_events: validation failed idx={idx} client={client_id} errors={exc.errors()}"
             )
             raise HTTPException(
                 status_code=422,
@@ -903,10 +900,7 @@ async def ui_ingest_events(request: Request, payload: Dict[str, Any]) -> Dict[st
         redacted_events.append(_redact_event(model.model_dump()))
 
     logger.info(
-        "ui_ingest_events: client=%s received=%s validated=%s",
-        client_id,
-        len(events),
-        len(validated),
+        f"ui_ingest_events: client={client_id} received={len(events)} validated={len(validated)}"
     )
     return {
         "ok": True,
@@ -927,27 +921,27 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
     for upload in uploads:
         filename = upload.filename or "attachment"
         if not _is_safe_filename(filename):
-            logger.warning("observability_gap.attachment_bad_filename: %s", filename)
+            logger.warning(f"observability_gap.attachment_bad_filename: {filename}")
             raise HTTPException(status_code=400, detail="filename contains unsafe segments")
 
         mime = (upload.content_type or "application/octet-stream").lower()
         if mime not in ALLOWED_ATTACHMENT_MIME:
-            logger.warning("observability_gap.attachment_bad_mime: %s", mime)
+            logger.warning(f"observability_gap.attachment_bad_mime: {mime}")
             raise HTTPException(status_code=400, detail=f"unsupported mime type: {mime}")
 
         content = await upload.read()
         await upload.close()
         size = len(content)
         if size > MAX_ATTACHMENT_BYTES:
-            logger.warning("observability_gap.attachment_too_large: %s size=%s", filename, size)
+            logger.warning(f"observability_gap.attachment_too_large: {filename} size={size}")
             raise HTTPException(status_code=413, detail="attachment exceeds max size")
 
         clean, reason = _scan_attachment(content)
         if not clean:
-            logger.warning("observability_gap.attachment_malware_detected: %s reason=%s", filename, reason)
+            logger.warning(f"observability_gap.attachment_malware_detected: {filename} reason={reason}")
             raise HTTPException(status_code=400, detail="attachment flagged as malware")
         if not _matches_magic_bytes(content, mime):
-            logger.warning("observability_gap.attachment_magic_mismatch: %s", filename)
+            logger.warning(f"observability_gap.attachment_magic_mismatch: {filename}")
             raise HTTPException(status_code=400, detail="attachment content signature mismatch")
 
         attachments.append(_describe_attachment(filename, mime, size))

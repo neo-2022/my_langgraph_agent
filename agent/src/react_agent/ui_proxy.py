@@ -71,6 +71,7 @@ ATTACHMENT_MAGIC_SIGNATURES: Dict[str, List[bytes]] = {
     "application/json": [b"{", b"["],
 }
 MAX_ATTACHMENT_BYTES = int(os.environ.get("ATTACHMENT_MAX_BYTES", str(5_242_880)))
+ATTACHMENT_SCANNER_CMD = os.environ.get("ATTACHMENT_SCANNER_CMD", "").strip()
 
 REDACT_SENSITIVE_KEYS = {
     "authorization",
@@ -320,6 +321,26 @@ def _scan_attachment(content: bytes) -> Tuple[bool, Optional[str]]:
         proc.stderr,
     )
     return True, None
+
+
+def _run_attachment_scanner_update(cmd: str) -> Tuple[bool, str]:
+    args = shlex.split(cmd)
+    try:
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as exc:
+        logger.warning("attachment scanner update failed: %s", exc)
+        return False, str(exc)
+
+    output = (proc.stdout or proc.stderr or "").strip()
+    if proc.returncode == 0:
+        return True, output or "update succeeded"
+    message = output or f"update failed ({proc.returncode})"
+    return False, message
 
 
 async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dict[str, Any]], client_id: str) -> None:
@@ -841,6 +862,17 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
         "attachments": attachments,
         "files": len(attachments),
     }
+
+
+@app.post("/ui/attachments/update-scanner")
+async def ui_update_attachment_scanner() -> Dict[str, Any]:
+    cmd = os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", "").strip()
+    if not cmd:
+        raise HTTPException(status_code=404, detail="scanner update not configured")
+    ok, msg = _run_attachment_scanner_update(cmd)
+    if not ok:
+        raise HTTPException(status_code=500, detail=msg)
+    return {"ok": True, "message": msg}
 
 
 @app.post("/ui/model")

@@ -268,6 +268,33 @@ async def test_ingest_attachments_detects_malware(monkeypatch, ingest_client):
 
 
 @pytest.mark.anyio
+async def test_attachment_scanner_update_not_configured(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    monkeypatch.delenv("ATTACHMENT_SCANNER_UPDATE_CMD", raising=False)
+    response = await client.post("/ui/attachments/update-scanner")
+    assert response.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_attachment_scanner_update_runs(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    cmd = f"{sys.executable} -c 'print(\"updated\")'"
+    monkeypatch.setenv("ATTACHMENT_SCANNER_UPDATE_CMD", cmd)
+    response = await client.post("/ui/attachments/update-scanner")
+    assert response.status_code == 200
+    assert response.json().get("message") == "updated"
+
+
+@pytest.mark.anyio
+async def test_attachment_scanner_update_failure(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    cmd = f"{sys.executable} -c 'import sys; sys.exit(2)'"
+    monkeypatch.setenv("ATTACHMENT_SCANNER_UPDATE_CMD", cmd)
+    response = await client.post("/ui/attachments/update-scanner")
+    assert response.status_code == 500
+
+
+@pytest.mark.anyio
 async def test_provider_gateway_times_out(monkeypatch, proxied_client, caplog):
     client, _ = proxied_client
     async def slow_handler(reader, writer):

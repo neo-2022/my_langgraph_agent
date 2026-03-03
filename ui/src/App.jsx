@@ -812,12 +812,26 @@ export default function App() {
 
   const [apiStatus, setApiStatus] = useState("не проверял");
   const [apiError, setApiError] = useState("");
+  const [scannerStatus, setScannerStatus] = useState("");
+  const [scannerLoading, setScannerLoading] = useState(false);
 
   const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
     if (String(apiStatus).toLowerCase().includes("ошибка")) return "bad";
     return "neutral";
   }, [apiStatus]);
+
+  const triggerScannerUpdate = useCallback(async () => {
+    setScannerLoading(true);
+    try {
+      const resp = await httpClient.post("/ui/attachments/update-scanner");
+      setScannerStatus(`Обновлено: ${resp.message || "OK"}`);
+    } catch (error) {
+      setScannerStatus(`Ошибка: ${error?.message || "неизвестно"}`);
+    } finally {
+      setScannerLoading(false);
+    }
+  }, []);
 
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("");
@@ -2164,9 +2178,37 @@ setReactUiStatus(null);
 
           <div className="topbar__spacer" />
 
-          <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
-            API Docs
-          </a>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              className="ghost-link"
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: scannerLoading ? "wait" : "pointer",
+                fontSize: 13,
+              }}
+              onClick={triggerScannerUpdate}
+              disabled={scannerLoading}
+            >
+              {scannerLoading ? "Обновление..." : "Обновить AV-сканер"}
+            </button>
+            <a className="ghost-link" href="/api/docs" target="_blank" rel="noreferrer">
+              API Docs
+            </a>
+          </div>
+          {scannerStatus ? (
+            <div
+              style={{
+                fontSize: 12,
+                opacity: 0.8,
+                marginLeft: 10,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              {scannerStatus}
+            </div>
+          ) : null}
         </div>
 
         <div className="content" data-tab={tab}>

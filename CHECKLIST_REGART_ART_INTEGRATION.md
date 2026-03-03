@@ -292,12 +292,12 @@
     **Проверка:** `scripts/mock_art_stream.py` + `scripts/load_test.py --simulate=error_502/delay/partial` через UI Proxy 8095 и `pytest -q` (локальный конфиг) зелёные.
 
 ### Сквозной E2E “полный цикл” (обязательный)
-61. [ ] Поднять mock Art (ingest + partial-ack + SSE stream) и прогнать:  
+61. [x] Поднять mock Art (ingest + partial-ack + SSE stream) и прогнать:  
     UI → outbox → UI Proxy → mock Art ingest → mock Art SSE downlink → UI отображение  
     **Проверка:** один тест проходит всю цепочку.
 
 ### Rolling upgrade (обязательный)
-62. [ ] Сценарий: “старая версия” пишет в spool/outbox → обновление → доставка без потерь и падений на schema_version/unknown fields  
+62. [x] Сценарий: “старая версия” пишет в spool/outbox → обновление → доставка без потерь и падений на schema_version/unknown fields  
     **Проверка:** отдельный тест/скрипт.
 
 ---

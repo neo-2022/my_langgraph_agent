@@ -237,9 +237,9 @@
 
 ## 10) Downlink Art → REGART (SSE): ordering/resume
 
-45. [ ] SSE downlink через UI Proxy `/ui/art/stream`  
-46. [ ] cursor/resume (хранение cursor)  
-47. [ ] Ordering для downlink: если Art даёт sequence/cursor порядок — UI применяет/сортирует; иначе best-effort + gap при аномалиях  
+45. [x] SSE downlink через UI Proxy `/ui/art/stream`
+46. [x] cursor/resume (хранение cursor)
+47. [x] Ordering для downlink: если Art даёт sequence/cursor порядок — UI применяет/сортирует; иначе best-effort + gap при аномалиях
     **Проверка:** сквозной тест (см. шаг 61).
 
 ---

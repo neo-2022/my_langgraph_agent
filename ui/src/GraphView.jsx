@@ -397,7 +397,6 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const wrapRef = useRef(null);
   const [hasViewportSize, setHasViewportSize] = useState(false);
   const manualPositionsRef = useRef(false);
-  const manualPositionsRef = useRef(false);
 
   // Минимальный "пинок":
   // - ждём 2 кадра (layout -> paint), потом fitView

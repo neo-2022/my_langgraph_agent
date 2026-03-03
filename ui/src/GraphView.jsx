@@ -651,53 +651,65 @@ setNodes([]);
 
   // Tooltip patch for ReactFlow controls
   useEffect(() => {
-    const root = document.querySelector(".react-flow");
-    if (!root) return;
+    const translations = {
+      "zoom in": "Увеличить",
+      "zoom out": "Уменьшить",
+      "fit view": "Вписать",
+      interactive: "Интерактив",
+      lock: "Интерактив",
+    };
 
-    const patch = () => {
+    const patch = (root) => {
       const buttons = root.querySelectorAll(".react-flow__controls button");
       buttons.forEach((btn) => {
-        const t = btn.getAttribute("title");
-        if (t && !btn.getAttribute("data-tip")) btn.setAttribute("data-tip", t);
-        if (t) btn.removeAttribute("title");
+        const title = (btn.getAttribute("title") || "").trim();
+        const aria = (btn.getAttribute("aria-label") || "").trim();
+        const dataTip = (btn.getAttribute("data-tip") || "").trim();
+        const existing = (dataTip || title || aria).trim();
+        if (!existing) return;
+        const key = existing.toLowerCase();
+        const translation = translations[key];
+        const tip = translation || existing;
+        btn.setAttribute("data-tip", tip);
+        if (translation && aria && aria !== translation) {
+          btn.setAttribute("aria-label", translation);
+        }
+        if (title) {
+          btn.removeAttribute("title");
+        }
       });
     };
 
-    patch();
-    const mo = new MutationObserver(() => patch());
-    mo.observe(root, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["title"],
-    });
-    return () => mo.disconnect();
-  }, []);
+    let mo;
+    let pollId;
 
-  useEffect(() => {
-    const root = document.querySelector(".react-flow");
-    if (!root) return;
-
-    const setTips = () => {
-      const buttons = root.querySelectorAll(".react-flow__controls button");
-      buttons.forEach((btn) => {
-        const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
-        let tip = btn.getAttribute("data-tip") || "";
-
-        if (aria.includes("zoom in")) tip = "Увеличить";
-        else if (aria.includes("zoom out")) tip = "Уменьшить";
-        else if (aria.includes("fit view")) tip = "Вписать";
-        else if (aria.includes("interactivity")) tip = "Интерактив";
-        else if (aria.includes("interactive")) tip = "Интерактив";
-        else if (aria.includes("lock")) tip = "Интерактив";
-
-        if (tip) btn.setAttribute("data-tip", tip);
+    const establish = () => {
+      const root = document.querySelector(".react-flow");
+      if (!root) return false;
+      patch(root);
+      mo = new MutationObserver(() => patch(root));
+      mo.observe(root, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["title"],
       });
+      return true;
     };
 
-    setTips();
-    const id = window.setInterval(setTips, 500);
-    return () => window.clearInterval(id);
+    if (!establish()) {
+      pollId = window.setInterval(() => {
+        if (establish() && pollId) {
+          window.clearInterval(pollId);
+          pollId = null;
+        }
+      }, 250);
+    }
+
+    return () => {
+      mo?.disconnect();
+      if (pollId) window.clearInterval(pollId);
+    };
   }, []);
 
   const onNodeClick = useCallback(

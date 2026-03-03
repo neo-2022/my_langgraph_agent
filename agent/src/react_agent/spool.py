@@ -5,7 +5,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS spool_meta (
     value TEXT NOT NULL
 );
 """
+
+def _now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
+
 
 class Spool:
     def __init__(self, path: Path = DEFAULT_SPOOL_PATH):
@@ -128,13 +132,13 @@ class Spool:
         if self._corrupted:
             self._fallback.extend(
                 [
-                    {"event": ev, "client_id": client_id, "received_at": datetime.utcnow().timestamp()}
+                    {"event": ev, "client_id": client_id, "received_at": _now_ts()}
                     for ev in events
                 ]
             )
             return
         conn = await self._connection()
-        now = int(datetime.utcnow().timestamp())
+        now = _now_ts()
         await conn.execute("BEGIN IMMEDIATE")
         for ev in events:
             await conn.execute(
@@ -165,7 +169,7 @@ class Spool:
 
     async def mark_in_flight(self, ids: Iterable[int]) -> None:
         conn = await self._connection()
-        now = int(datetime.utcnow().timestamp())
+        now = _now_ts()
         await conn.execute("BEGIN IMMEDIATE")
         for event_id in ids:
             await conn.execute(
@@ -183,7 +187,7 @@ class Spool:
 
     async def mark_retryable(self, ids: Iterable[int], error: Optional[str] = None) -> None:
         conn = await self._connection()
-        now = int(datetime.utcnow().timestamp())
+        now = _now_ts()
         await conn.execute("BEGIN IMMEDIATE")
         for event_id in ids:
             await conn.execute(
@@ -195,7 +199,7 @@ class Spool:
     async def cleanup_retention(self, retention_seconds: int = RETENTION_SECONDS) -> None:
         if self._corrupted:
             return
-        threshold = int(datetime.utcnow().timestamp()) - retention_seconds
+        threshold = _now_ts() - retention_seconds
         conn = await self._connection()
         await conn.execute("DELETE FROM spool_events WHERE created_at < ?", (threshold,))
         await conn.execute("DELETE FROM spool_dlq WHERE created_at < ?", (threshold,))
@@ -205,7 +209,7 @@ class Spool:
         if self._corrupted:
             return
         conn = await self._connection()
-        now = int(datetime.utcnow().timestamp())
+        now = _now_ts()
         await conn.execute(
             "INSERT INTO spool_dlq (event_id, client_id, raw_event, reason, created_at, attempts) VALUES (?, ?, ?, ?, ?, ?)",
             (event_id, client_id, json.dumps(raw_event, ensure_ascii=False), reason, now, attempts),

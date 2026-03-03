@@ -704,11 +704,15 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
 
         content = await upload.read()
         await upload.close()
+        size = len(content)
+        if size > MAX_ATTACHMENT_BYTES:
+            logger.warning("observability_gap.attachment_too_large: %s size=%s", filename, size)
+            raise HTTPException(status_code=413, detail="attachment exceeds max size")
         if not _matches_magic_bytes(content, mime):
             logger.warning("observability_gap.attachment_magic_mismatch: %s", filename)
             raise HTTPException(status_code=400, detail="attachment content signature mismatch")
 
-        attachments.append(_describe_attachment(filename, mime, len(content)))
+        attachments.append(_describe_attachment(filename, mime, size))
 
     return {
         "ok": True,

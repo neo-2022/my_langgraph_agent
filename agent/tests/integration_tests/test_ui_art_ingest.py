@@ -237,6 +237,19 @@ async def test_ingest_attachments_rejects_magic_mismatch(ingest_client):
     assert response.status_code == 400
     assert "signature" in response.json().get("detail", "")
 
+
+@pytest.mark.anyio
+async def test_ingest_attachments_rejects_large_files(monkeypatch, ingest_client):
+    monkeypatch.setattr(ui_proxy, "MAX_ATTACHMENT_BYTES", 1)
+    headers = {
+        "Authorization": "Bearer ingest-token",
+        "X-Client-Id": "ingest-client",
+    }
+    files = {"file": ("huge.txt", b"ok", "text/plain")}
+    response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
+    assert response.status_code == 413
+    assert "max size" in response.json().get("detail", "")
+
 @pytest.mark.anyio
 async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):
     client, spool = proxied_client

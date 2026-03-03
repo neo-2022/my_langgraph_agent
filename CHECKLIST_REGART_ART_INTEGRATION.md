@@ -213,9 +213,9 @@
 38. [x] `/ui/ingest/attachments`: allowlist MIME + magic-bytes check + safe filenames + no inline render  
     **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_magic_mismatch agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_path_traversal`
 
-39. [ ] Поведение при слишком большом attachment  
+39. [x] Поведение при слишком большом attachment  
     **Требование:** >max_bytes → HTTP 413 + `observability_gap.attachment_too_large`  
-    **Проверка:** тест грузит файл > лимита → 413 и событие (см. шаг 60).
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_ingest_attachments_rejects_large_files`
 
 40. [ ] Антивирус/сканирование вложений (ClamAV или внешний scanner)  
     **Проверка:** EICAR → отклонение + `observability_gap.attachment_malware_detected` (см. шаг 60).

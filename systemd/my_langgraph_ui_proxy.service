@@ -1,0 +1,15 @@
+[Unit]
+Description=LangGraph UI Proxy
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/my_langgraph_agent/agent
+ExecStart=/bin/bash -lc 'source %h/my_langgraph_agent/venv/bin/activate && UI_PROXY_PORT=8090 python -m uvicorn react_agent.ui_proxy:app --host 127.0.0.1 --port 8090'
+Environment=PATH=%h/my_langgraph_agent/venv/bin:/usr/local/bin:/usr/bin
+Environment=LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

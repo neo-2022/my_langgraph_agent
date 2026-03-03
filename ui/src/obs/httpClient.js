@@ -142,25 +142,7 @@ export async function request(path, options = {}) {
   }
 }
 
-export const httpClient = {
-  get(path, opts = {}) {
-    return request(path, { ...opts, method: "GET" });
-  },
-  post(path, opts = {}) {
-    return request(path, { ...opts, method: "POST" });
-  },
-  put(path, opts = {}) {
-    return request(path, { ...opts, method: "PUT" });
-  },
-  patch(path, opts = {}) {
-    return request(path, { ...opts, method: "PATCH" });
-  },
-  delete(path, opts = {}) {
-    return request(path, { ...opts, method: "DELETE" });
-  },
-};
-
-export async function stream(path, options = {}) {
+async function _streamRequest(path, options = {}) {
   const opts = { method: "GET", ...options };
   const method = (opts.method || "GET").toUpperCase();
   const baseUrl = opts.baseUrl || "";
@@ -204,3 +186,28 @@ export async function stream(path, options = {}) {
 
   return response;
 }
+
+export async function stream(path, options = {}) {
+  return _streamRequest(path, options);
+}
+
+export const httpClient = {
+  get(path, opts = {}) {
+    return request(path, { ...opts, method: "GET" });
+  },
+  post(path, opts = {}) {
+    return request(path, { ...opts, method: "POST" });
+  },
+  put(path, opts = {}) {
+    return request(path, { ...opts, method: "PUT" });
+  },
+  patch(path, opts = {}) {
+    return request(path, { ...opts, method: "PATCH" });
+  },
+  delete(path, opts = {}) {
+    return request(path, { ...opts, method: "DELETE" });
+  },
+  stream(path, opts = {}) {
+    return _streamRequest(path, opts);
+  },
+};

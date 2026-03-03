@@ -752,7 +752,7 @@ a:hover {
 }
 
 .fselect__menu-inner {
-  max-height: 320px;
+  max-height: min(70vh, 420px);
   overflow: auto;
   padding: 6px;
 }

@@ -2,24 +2,36 @@
 
 Репозиторий для локального LangGraph-агента + React UI.
 
-## Запуск (tmux)
-Запуск всего:
-~~~bash
+---
+## Запуск (systemd user services)
+
+Скрипт `run.sh` копирует сервисы из `systemd/*.service` в `~/.config/systemd/user/`, перезапускает systemd-демон и включает+стартует три пользователя-сервиса (`my_langgraph.service`, `my_langgraph_ui_proxy.service`, `my_langgraph_react_ui.service`).
+
+```bash
 cd ~/my_langgraph_agent
 ./run.sh
-~~~
+```
 
-Порты:
-- UI: http://127.0.0.1:5174
-- API Docs: http://127.0.0.1:2024/docs
-- UI Proxy: http://127.0.0.1:8090
+Каждый сервис может быть контролирован вручную через `systemctl --user start|stop|restart <имя>` и `systemctl --user status <имя>`. Команды `journalctl --user -u <имя>` показывают логи.
 
-tmux:
-- attach: `tmux attach -t <session>`
-- dettach: `Ctrl+B` затем `D`
+Если LangGraph запускается с сервисом отличным от `LangGraph.service` (например, `my_langgraph.service`), выставьте:
 
----
+```bash
+export LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service
+```
 
+UI Proxy (`my_langgraph_ui_proxy.service`) и React UI (`my_langgraph_react_ui.service`) тоже ожидаются как systemd-сервисы; `run.sh` устанавливает и включают их автоматически. При необходимости можно самостоятельно выполнить:
+
+```bash
+systemctl --user enable --now my_langgraph_ui_proxy.service
+systemctl --user enable --now my_langgraph_react_ui.service
+```
+
+LangGraph, UI Proxy и React UI всегда запускаются как user systemd-сервисы — `tmux` больше не нужен. Если тебе нужно управлять нестандартным сервисом, пропиши `export LANGGRAPH_SYSTEMD_SERVICE=имя_сервиса` в окружении (`~/.bashrc`, `~/.profile` или `.env`, откуда стартует UI Proxy), чтобы кнопка «Перезапустить LangGraph сервер» и ручные `/ui/langgraph/{start,stop}` отправляли команды нужному systemd-сервису.
+
+После этого UI (включая кнопку «Перезапустить LangGraph сервер» и `/ui/langgraph/{start,stop}`) работает через этот сервис.
+
+----
 ## Как выбрать модель Ollama (через React UI)
 
 1) Открой React UI: http://127.0.0.1:5174  
@@ -79,4 +91,3 @@ git log -1 --oneline
 - `agent/src/react_agent/ui_proxy.py` — UI Proxy (эндпоинты /ui/*)
 - `scripts/verify_integrity.py` — gate-проверки инвариантов
 - `scripts/safe_edit.py` — безопасные правки файлов
-

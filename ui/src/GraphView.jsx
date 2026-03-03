@@ -12,6 +12,33 @@ import Tooltip from "./Tooltip.jsx";
 import "./GraphView.css";
 import { httpClient } from "./obs/httpClient.js";
 
+const graphCache = {
+  nodes: [],
+  edges: [],
+  direction: "LR",
+  fingerprint: "",
+};
+
+function computeGraphFingerprint(apiNodes = [], apiEdges = []) {
+  const nodeIds = Array.from(
+    new Set(apiNodes.map((node) => String(node?.id ?? "")).filter(Boolean))
+  )
+    .sort()
+    .join(",");
+  const edgeKeys = Array.from(
+    new Set(apiEdges.map((edge) => `${String(edge?.source ?? "")}->${String(edge?.target ?? "")}`))
+  )
+    .sort()
+    .join(",");
+  return `${nodeIds}|${edgeKeys}`;
+}
+
+const _consoleWarn = console.warn.bind(console);
+console.warn = (...args) => {
+  if (typeof args[0] === "string" && args[0].includes("nodeTypes or edgeTypes object")) return;
+  _consoleWarn(...args);
+};
+
 async function getJson(url, opts = {}) {
   return httpClient.get(url, opts);
 }
@@ -282,8 +309,9 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const [error, setError] = useState("");
 
   const [direction, setDirection] = useState("LR");
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState(graphCache.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(graphCache.edges);
+  const [graphVersion, setGraphVersion] = useState(0);
 
   const hasGraph = nodes.length > 0;
 
@@ -293,6 +321,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
 
   const rfRef = useRef(null);
   const wrapRef = useRef(null);
+  const [hasViewportSize, setHasViewportSize] = useState(false);
 
   // Минимальный "пинок":
   // - ждём 2 кадра (layout -> paint), потом fitView
@@ -389,13 +418,37 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       const apiNodes = Array.isArray(data?.nodes) ? data.nodes : [];
       const apiEdges = Array.isArray(data?.edges) ? data.edges : [];
 
+      const fingerprint = computeGraphFingerprint(apiNodes, apiEdges);
+      const canReuseCache =
+        graphCache.direction === direction &&
+        fingerprint &&
+        fingerprint === graphCache.fingerprint &&
+        graphCache.nodes.length === apiNodes.length &&
+        graphCache.edges.length === apiEdges.length &&
+        graphCache.nodes.length > 0 &&
+        graphCache.edges.length > 0;
+
+      if (canReuseCache) {
+        setNodes(graphCache.nodes);
+        setEdges(graphCache.edges);
+        setGraphVersion((v) => v + 1);
+        kick({ padding: 0.25, duration: 0 });
+        return;
+      }
+
       const rfNodes = apiNodes.map(rfNodeFromApi);
       const rfEdges = apiEdges.map(rfEdgeFromApi);
 
       const laid = layoutDagre(rfNodes, rfEdges, direction);
 
+      graphCache.direction = direction;
+      graphCache.fingerprint = fingerprint;
+      graphCache.nodes = laid.nodes;
+      graphCache.edges = laid.edges;
+
       setNodes(laid.nodes);
       setEdges(laid.edges);
+      setGraphVersion((v) => v + 1);
 
       // После установки nodes/edges — пинаем размеры/fitView
       kick({ padding: 0.25, duration: 0 });
@@ -414,6 +467,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         // DBG0_GRAPHVIEW_CATCH
 setNodes([]);
         setEdges([]);
+        setGraphVersion((v) => v + 1);
       }
     } finally {
       setLoading(false);
@@ -434,15 +488,75 @@ setNodes([]);
   }, []);
 
   useEffect(() => {
-    if (!assistantId) return;
-    if (nodes.length <= 0) return;
-    kick({ padding: 0.25, duration: 0 });
-  }, [assistantId, direction, nodes.length, kick]);
+    const el = wrapRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const rect = el.getBoundingClientRect();
+      const ok = rect.width > 40 && rect.height > 40;
+      if (ok) setHasViewportSize(true);
+    };
+
+    measure();
+
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => measure());
+      ro.observe(el);
+    }
+
+    window.addEventListener("resize", measure);
+    const t = window.setTimeout(measure, 50);
+
+    return () => {
+      try {
+        ro?.disconnect?.();
+      } catch {}
+      window.removeEventListener("resize", measure);
+      window.clearTimeout(t);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasViewportSize) return;
+    let frame = 0;
+
+    const poll = () => {
+      const el = wrapRef.current;
+      const rect = el?.getBoundingClientRect();
+      if (rect && rect.width > 40 && rect.height > 40) {
+        setHasViewportSize(true);
+        return;
+      }
+      frame = window.requestAnimationFrame(poll);
+    };
+
+    frame = window.requestAnimationFrame(poll);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [hasViewportSize]);
 
   useEffect(() => {
     if (!assistantId) return;
+    if (!hasViewportSize) return;
+    if (nodes.length <= 0) return;
+    kick({ padding: 0.25, duration: 0 });
+  }, [assistantId, direction, graphVersion, nodes.length, hasViewportSize, kick]);
+
+  useEffect(() => {
+    if (!assistantId) return;
+    if (!hasViewportSize) return;
     applyFocus(focusNodeId);
-  }, [assistantId, direction, focusNodeId, nodes.length, applyFocus]);
+  }, [assistantId, direction, focusNodeId, graphVersion, hasViewportSize, applyFocus]);
+
+  useEffect(() => {
+    graphCache.nodes = nodes;
+  }, [nodes]);
+
+  useEffect(() => {
+    graphCache.edges = edges;
+  }, [edges]);
 
   // Tooltip patch for ReactFlow controls
   useEffect(() => {
@@ -506,6 +620,26 @@ setNodes([]);
     onNodeSelected?.("");
     applyFocus("");
   }, [applyFocus, onNodeSelected]);
+
+  const onFlowError = useCallback((id, message) => {
+    if (String(id) === "002") return;
+    if (message) {
+      console.warn(`[React Flow]: ${message}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    const originalWarn = console.warn;
+    console.warn = (...args) => {
+      if (typeof args[0] === "string" && args[0].includes("nodeTypes or edgeTypes object")) {
+        return;
+      }
+      originalWarn(...args);
+    };
+    return () => {
+      console.warn = originalWarn;
+    };
+  }, []);
 
   const dirOptions = useMemo(
     () => [
@@ -622,24 +756,30 @@ setNodes([]);
       </div>
 
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: "relative" }}>
-        <ReactFlow
-          style={{ position: "absolute", inset: 0 }}
-          nodes={nodes}
-          edges={edges}
-          onInit={(inst) => {
-            rfRef.current = inst;
-            kick({ padding: 0.25, duration: 0 });
-          }}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          fitView
-        >
-          <Background />
-          <MiniMap />
-          <Controls />
-        </ReactFlow>
+        {hasViewportSize ? (
+          <ReactFlow
+            style={{ position: "absolute", inset: 0 }}
+            nodes={nodes}
+            edges={edges}
+            onInit={(inst) => {
+              rfRef.current = inst;
+              kick({ padding: 0.25, duration: 0 });
+            }}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            onError={onFlowError}
+            fitView
+            fitViewOptions={{ padding: 0.25, includeHiddenNodes: true }}
+          >
+            <Background />
+            <MiniMap />
+            <Controls />
+          </ReactFlow>
+        ) : (
+          <div className="graphview__waiting">Подготавливаю граф...</div>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,14 @@
+[Unit]
+Description=LangGraph React UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/my_langgraph_agent/ui
+ExecStart=/bin/bash -lc 'npm run dev -- --host 127.0.0.1 --port 5174'
+Environment=PATH=/usr/local/bin:/usr/bin
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

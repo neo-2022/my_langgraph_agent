@@ -5,16 +5,16 @@ UI Proxy API для React UI.
 2) /ui/*   -> "удобные" эндпоинты для локального UI:
    - список моделей Ollama
    - сохранить модель в .env
-   - перезапуск tmux-сессии langgraph
+   - перезапуск systemd-сервиса LangGraph
    - probe tool_calls (проверка поддержки tool calling у моделей)
 
 Важно по Debugger:
 - Для "100% ошибок" нужны источники вне браузера:
-  - Vite/dev-server (tmux session ui)
-  - LangGraph (tmux session langgraph)
-  - UI Proxy (tmux session ui_proxy)
+  - Vite/dev-server (systemd user service для реактивного UI)
+  - LangGraph (systemd user service)
+  - UI Proxy (systemd user service)
   - и будущие сервисы (cloud models/tools/etc).
-- Поэтому ui_proxy даёт эндпоинты статуса и логов по tmux (чтобы ошибки сборки/процессов были видимы всегда).
+- Поэтому ui_proxy даёт эндпоинты статуса и логов через systemd/journalctl, чтобы ошибки сборки/процессов были видимы всегда.
 """
 
 from __future__ import annotations
@@ -72,6 +72,11 @@ ATTACHMENT_MAGIC_SIGNATURES: Dict[str, List[bytes]] = {
 }
 MAX_ATTACHMENT_BYTES = int(os.environ.get("ATTACHMENT_MAX_BYTES", str(5_242_880)))
 ATTACHMENT_SCANNER_CMD = os.environ.get("ATTACHMENT_SCANNER_CMD", "").strip()
+ATTACHMENT_SCANNER_UPDATE_CMD = os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", "sudo freshclam").strip()
+
+
+def _get_update_cmd() -> str:
+    return os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", ATTACHMENT_SCANNER_UPDATE_CMD).strip()
 
 REDACT_SENSITIVE_KEYS = {
     "authorization",
@@ -90,17 +95,41 @@ REDACTED_MARKER = "***REDACTED***"
 # Где лежит .env (в корне agent-проекта)
 ENV_PATH = (Path(__file__).resolve().parent / ".." / ".." / ".env").resolve()
 
-# Команда запуска LangGraph (то же, что ты запускал в tmux)
-LANGGRAPH_TMUX_CMD = os.environ.get(
-    "LANGGRAPH_TMUX_CMD",
-    "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && langgraph dev --no-browser",
-)
+# LangGraph service configuration
+LANGGRAPH_SYSTEMD_SERVICE = os.environ.get("LANGGRAPH_SYSTEMD_SERVICE", "").strip()
+DEFAULT_LANGGRAPH_SYSTEMD_SERVICE = os.environ.get("LANGGRAPH_DEFAULT_SYSTEMD_SERVICE", "my_langgraph.service").strip()
 
-# Команда запуска UI Proxy (tmux session ui_proxy)
-UI_PROXY_TMUX_CMD = os.environ.get(
-    "UI_PROXY_TMUX_CMD",
-    "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && UI_PROXY_PORT=8090 python -m uvicorn react_agent.ui_proxy:app --host 127.0.0.1 --port 8090",
-)
+
+_SERVICE_DETECTION_CANDIDATES = ("LangGraph.service",)
+_detected_langgraph_service: Optional[str] = None
+
+
+def _candidate_services() -> Iterable[str]:
+    yield DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
+    for svc in _SERVICE_DETECTION_CANDIDATES:
+        if svc != DEFAULT_LANGGRAPH_SYSTEMD_SERVICE:
+            yield svc
+
+
+def _langgraph_service_name() -> str:
+    if LANGGRAPH_SYSTEMD_SERVICE:
+        return LANGGRAPH_SYSTEMD_SERVICE
+
+    global _detected_langgraph_service
+    if _detected_langgraph_service:
+        info = _systemd_user_service_status(_detected_langgraph_service)
+        if info.get("active"):
+            return _detected_langgraph_service
+        _detected_langgraph_service = None
+
+    for svc in _candidate_services():
+        info = _systemd_user_service_status(svc)
+        if info.get("active"):
+            _detected_langgraph_service = svc
+            return svc
+
+    _detected_langgraph_service = DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
+    return _detected_langgraph_service
 
 # Кэш probe (чтобы не мучить большие модели постоянно)
 PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
@@ -324,23 +353,63 @@ def _scan_attachment(content: bytes) -> Tuple[bool, Optional[str]]:
 
 
 def _run_attachment_scanner_update(cmd: str) -> Tuple[bool, str]:
-    args = shlex.split(cmd)
-    try:
-        proc = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except Exception as exc:
-        logger.warning("attachment scanner update failed: %s", exc)
-        return False, str(exc)
+    def _run(parts: List[str]) -> Tuple[bool, str, Optional[subprocess.CompletedProcess]]:
+        try:
+            proc = subprocess.run(
+                parts,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except Exception as exc:
+            logger.warning("attachment scanner update failed: %s", exc)
+            return False, str(exc), None
+        output = (proc.stdout or proc.stderr or "").strip()
+        return (proc.returncode == 0), output, proc
 
-    output = (proc.stdout or proc.stderr or "").strip()
-    if proc.returncode == 0:
-        return True, output or "update succeeded"
-    message = output or f"update failed ({proc.returncode})"
-    return False, message
+    args = shlex.split(cmd)
+    def _base_command(parts: List[str]) -> List[str]:
+        prefix: List[str] = []
+        for part in parts:
+            if part.startswith("-"):
+                break
+            prefix.append(part)
+        return prefix or parts[:1]
+
+    success, message, proc = _run(args)
+    normalized = (message or "").lower()
+    if success:
+        return True, message or "update succeeded"
+
+    if "unknown option" in normalized and len(args) > 1:
+        fallback_args = _base_command(args)
+        logger.info("attachment scanner update: retrying without unknown options %s", fallback_args)
+        success, message, proc = _run(fallback_args)
+        if success:
+            return True, message or "update succeeded (fallback)"
+        normalized = (message or "").lower()
+
+    if "failed to lock the log file" in normalized or "resource temporarily unavailable" in normalized:
+        logger.warning("attachment scanner update log busy: %s", message)
+        return True, "scanner already running (log locked)"
+
+    if "failed to open log file" in normalized or "permission denied" in normalized:
+        tmp_log = "/tmp/clamav-freshclam-ui.log"
+        logger.info("attachment scanner update: retrying with temporary log %s", tmp_log)
+        fallback_args = [part for part in args if not part.startswith("--log=")]
+        if not fallback_args:
+            fallback_args = _base_command(args)
+        fallback_args.append(f"--log={tmp_log}")
+        success, message, proc = _run(fallback_args)
+        if success:
+            return True, message or "update succeeded (tmp log)"
+        normalized = (message or "").lower()
+        if "failed to lock the log file" in normalized or "resource temporarily unavailable" in normalized:
+            logger.warning("attachment scanner update log busy on tmp log: %s", message)
+            return True, "scanner already running (log locked)"
+
+    reason = message or f"update failed ({proc.returncode if proc else 'unknown'})"
+    return False, reason
 
 
 async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dict[str, Any]], client_id: str) -> None:
@@ -463,136 +532,77 @@ async def _forward_to_provider(
         raise HTTPException(status_code=502, detail="provider request error") from exc
 
 
-# ---------- tmux helpers ----------
+# ---------- systemd helpers ----------
 
-def _tmux_has_session(name: str) -> bool:
-    p = subprocess.run(
-        ["tmux", "has-session", "-t", name],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return p.returncode == 0
-
-
-def _tmux_capture_pane(name: str, lines: int = 200) -> Dict[str, Any]:
-    """
-    Возвращает текст из tmux pane для сессии `name` (последние N строк).
-    Это нужно для "100% ошибок" (например, ошибки сборки Vite/Babel в tmux session ui).
-    """
-    if not _tmux_has_session(name):
-        return {"ok": False, "error": f"tmux-сессия {name} не найдена", "tmux_session": False}
-
-def _systemd_user_journal(unit: str, lines: int = 200) -> Dict[str, Any]:
-    """
-    Возвращает последние N строк логов systemd user unit через journalctl.
-    Нужно для "100% ошибок" для сервисов, которые не в tmux (например React UI как systemd service).
-    """
-    n = int(lines or 200)
-    n = max(20, min(2000, n))
+def _systemd_user_action(action: str, service: str) -> Dict[str, Any]:
+    if not service:
+        return {"ok": False, "error": "Имя systemd-сервиса не задано"}
     try:
         r = subprocess.run(
-            ["journalctl", "--user", "-u", unit, "-n", str(n), "--no-pager"],
+            ["systemctl", "--user", action, service],
             text=True,
             capture_output=True,
-            check=False,
         )
         if r.returncode != 0:
-            return {"ok": False, "unit": unit, "lines": n, "error": (r.stderr.strip() or r.stdout.strip() or "journalctl failed"), "text": ""}
-        return {"ok": True, "unit": unit, "lines": n, "text": (r.stdout or "").rstrip("\n")}
-    except Exception as e:
-        return {"ok": False, "unit": unit, "lines": n, "error": str(e), "text": ""}
+            msg = (r.stderr or r.stdout or "").strip()
+            return {"ok": False, "error": msg or f"systemctl --user {action} {service} не удался"}
+        return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
-    n = int(lines or 200)
-    n = max(20, min(2000, n))  # лимитируем, чтобы не тащить мегабайты
-
-    # capture-pane:
-    # -p: print
-    # -S -N: start line from -N (последние N)
+def _systemd_user_service_status(service: str) -> Dict[str, Any]:
+    info = {"name": service, "active": False, "enabled": False, "error": ""}
+    if not service:
+        info["error"] = "Имя systemd-сервиса не задано"
+        return info
     try:
         r = subprocess.run(
-            ["tmux", "capture-pane", "-t", name, "-p", "-S", f"-{n}"],
+            ["systemctl", "--user", "is-active", service],
             text=True,
             capture_output=True,
-            check=False,
         )
-        txt = (r.stdout or "").rstrip("\n")
-        return {"ok": True, "tmux_session": True, "lines": n, "text": txt}
-    except Exception as e:
-        return {"ok": False, "tmux_session": True, "error": str(e), "lines": n, "text": ""}
+        info["active"] = (r.returncode == 0) and (r.stdout.strip() == "active")
+        r2 = subprocess.run(
+            ["systemctl", "--user", "is-enabled", service],
+            text=True,
+            capture_output=True,
+        )
+        info["enabled"] = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
+    except Exception as exc:
+        info["error"] = str(exc)
+    return info
 
+
+def _systemd_langgraph_action(action: str) -> Dict[str, Any]:
+    return _systemd_user_action(action, _langgraph_service_name())
+
+
+def _systemd_langgraph_status() -> Dict[str, Any]:
+    return _systemd_user_service_status(_langgraph_service_name())
+
+def _langgraph_start() -> Dict[str, Any]:
+    return _systemd_langgraph_action("start")
+
+def _langgraph_stop() -> Dict[str, Any]:
+    return _systemd_langgraph_action("stop")
+
+def _langgraph_restart() -> Dict[str, Any]:
+    return _systemd_langgraph_action("restart")
 
 def _http_health(url: str) -> Dict[str, Any]:
     try:
         r = httpx.get(url, timeout=2.0)
         return {"ok": bool(r.status_code == 200), "status_code": int(r.status_code)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def _tmux_stop_session(name: str) -> Dict[str, Any]:
-    if not _tmux_has_session(name):
-        return {"ok": False, "error": f"tmux-сессия {name} не найдена"}
-    subprocess.run(["tmux", "send-keys", "-t", name, "C-c"], check=False)
-    return {"ok": True}
-
-
-def _tmux_start_session(name: str, cmd: str) -> Dict[str, Any]:
-    if not _tmux_has_session(name):
-        subprocess.run(["tmux", "new-session", "-d", "-s", name, cmd], check=False)
-        return {"ok": True, "created": True}
-    subprocess.run(["tmux", "send-keys", "-t", name, cmd, "Enter"], check=False)
-    return {"ok": True, "created": False}
-
-
-def _tmux_restart_langgraph() -> Dict[str, Any]:
-    """
-    Простыми словами: "остановить и снова запустить LangGraph сервер, который сидит в tmux".
-    """
-    if not _tmux_has_session("langgraph"):
-        return {"ok": False, "error": "tmux-сессия langgraph не найдена"}
-
-    # 1) Ctrl+C (остановить)
-    subprocess.run(["tmux", "send-keys", "-t", "langgraph", "C-c"], check=False)
-    # 2) запуск той же команды
-    subprocess.run(
-        ["tmux", "send-keys", "-t", "langgraph", LANGGRAPH_TMUX_CMD, "Enter"],
-        check=False,
-    )
-
-    return {"ok": True}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 def _langgraph_health() -> Dict[str, Any]:
     """
     Пытаемся понять, жив ли LangGraph по HTTP.
     """
-    url = LANGGRAPH_BASE_URL.rstrip("/") + "/openapi.json"
-    try:
-        r = httpx.get(url, timeout=2.0)
-        return {"ok": bool(r.status_code == 200), "status_code": int(r.status_code)}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-def _tmux_stop_langgraph() -> Dict[str, Any]:
-    if not _tmux_has_session("langgraph"):
-        return {"ok": False, "error": "tmux-сессия langgraph не найдена"}
-    subprocess.run(["tmux", "send-keys", "-t", "langgraph", "C-c"], check=False)
-    return {"ok": True}
-
-
-def _tmux_start_langgraph() -> Dict[str, Any]:
-    """
-    Запускаем LangGraph в tmux-сессии langgraph.
-    Если сессии нет — создаём.
-    Если есть — отправляем команду запуска.
-    """
-    if not _tmux_has_session("langgraph"):
-        subprocess.run(["tmux", "new-session", "-d", "-s", "langgraph", LANGGRAPH_TMUX_CMD], check=False)
-        return {"ok": True, "created": True}
-    subprocess.run(["tmux", "send-keys", "-t", "langgraph", LANGGRAPH_TMUX_CMD, "Enter"], check=False)
-    return {"ok": True, "created": False}
+    return _http_health(LANGGRAPH_BASE_URL.rstrip("/") + "/openapi.json")
 
 
 # ---------- /api proxy ----------
@@ -866,7 +876,7 @@ async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
 
 @app.api_route("/ui/attachments/update-scanner", methods=["GET", "POST"])
 async def ui_update_attachment_scanner() -> Dict[str, Any]:
-    cmd = os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", "").strip()
+    cmd = _get_update_cmd()
     if not cmd:
         raise HTTPException(status_code=404, detail="scanner update not configured")
 
@@ -901,14 +911,14 @@ async def ui_set_model(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.post("/ui/restart-langgraph")
 def ui_restart_langgraph() -> Dict[str, Any]:
-    return _tmux_restart_langgraph()
+    return _langgraph_restart()
 
 
 @app.get("/ui/langgraph/status")
 def ui_langgraph_status() -> Dict[str, Any]:
     return {
         "ok": True,
-        "tmux_session": _tmux_has_session("langgraph"),
+        "systemd_user_service": _systemd_langgraph_status(),
         "health": _langgraph_health(),
         "base_url": LANGGRAPH_BASE_URL,
     }
@@ -916,12 +926,12 @@ def ui_langgraph_status() -> Dict[str, Any]:
 
 @app.post("/ui/langgraph/stop")
 def ui_langgraph_stop() -> Dict[str, Any]:
-    return _tmux_stop_langgraph()
+    return _langgraph_stop()
 
 
 @app.post("/ui/langgraph/start")
 def ui_langgraph_start() -> Dict[str, Any]:
-    return _tmux_start_langgraph()
+    return _langgraph_start()
 
 
 @app.get("/ui/ui-proxy/status")

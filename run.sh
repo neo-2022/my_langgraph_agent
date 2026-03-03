@@ -49,41 +49,25 @@ wait_ui_proxy() {
   done
 }
 
-# 1) LangGraph server in tmux
-if ! tmux has-session -t langgraph 2>/dev/null; then
-  tmux new -d -s langgraph "cd '$AGENT_DIR' && source '$VENV_ACTIVATE' && langgraph dev --no-browser"
-  echo "Запущено: tmux session langgraph"
-else
-  echo "Уже запущено: tmux session langgraph"
-fi
+# 1) Install user systemd services
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+SERVICES=(
+  "my_langgraph.service"
+  "my_langgraph_ui_proxy.service"
+  "my_langgraph_react_ui.service"
+)
 
-# 2) UI Proxy in tmux (единая точка входа для /api/* и /ui/*)
-if ! tmux has-session -t ui_proxy 2>/dev/null; then
-  tmux new -d -s ui_proxy "cd '$AGENT_DIR' && source '$VENV_ACTIVATE' && UI_PROXY_PORT='$UI_PROXY_PORT' python -m uvicorn react_agent.ui_proxy:app --host '$UI_PROXY_HOST' --port '$UI_PROXY_PORT'"
-  echo "Запущено: tmux session ui_proxy"
-else
-  echo "Уже запущено: tmux session ui_proxy"
-fi
+mkdir -p "$SYSTEMD_USER_DIR"
+cp -f "$ROOT/systemd/"*.service "$SYSTEMD_USER_DIR/"
 
-# дождаться готовности ui_proxy перед стартом React UI (устраняет ECONNREFUSED на холодном старте)
-wait_ui_proxy || true
+systemctl --user daemon-reload
 
-# 3) React UI in tmux
-if [[ -d "$UI_DIR" ]]; then
-  if ! tmux has-session -t ui 2>/dev/null; then
-    tmux new -d -s ui "cd '$UI_DIR' && npm run dev -- --host $REACT_HOST --port $REACT_PORT"
-    echo "Запущено: tmux session ui"
-  else
-    echo "Уже запущено: tmux session ui"
-  fi
-else
-  echo "UI папка не найдена ($UI_DIR) — пропускаю запуск React UI"
-fi
+for svc in "${SERVICES[@]}"; do
+  systemctl --user enable --now "$svc"
+done
 
 echo
-echo "LangGraph API:     http://$LANGGRAPH_HOST:$LANGGRAPH_PORT"
-echo "LangGraph Docs:    http://$LANGGRAPH_HOST:$LANGGRAPH_PORT/docs"
-echo "UI Proxy:          http://$UI_PROXY_HOST:$UI_PROXY_PORT"
-echo "React UI:          http://$REACT_HOST:$REACT_PORT"
-echo
-echo "Подсказка: логи: tmux attach -t <сессия> (выйти: Ctrl+B затем D)"
+echo "LangGraph API:  http://$LANGGRAPH_HOST:$LANGGRAPH_PORT"
+echo "LangGraph Docs: http://$LANGGRAPH_HOST:$LANGGRAPH_PORT/docs"
+echo "UI Proxy:       http://$UI_PROXY_HOST:$UI_PROXY_PORT"
+echo "React UI:       http://$REACT_HOST:$REACT_PORT"

@@ -12,6 +12,16 @@
   background: rgba(0,0,0,0.10);
 }
 
+.graphview__waiting{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.72);
+  font-size: 13px;
+  letter-spacing: 0.15px;
+}
+
 /* ===========================
    FancySelect (GraphView local)
    =========================== */
@@ -51,6 +61,8 @@
   background: rgba(10,14,22,0.92);
   backdrop-filter: blur(10px);
   box-shadow: 0 14px 34px rgba(0,0,0,0.45);
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
 }
 
 .fselect__item{

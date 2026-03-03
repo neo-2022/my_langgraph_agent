@@ -3,6 +3,7 @@
 Works with a chat model with tool calling support.
 """
 
+import os
 from datetime import UTC, datetime
 from typing import Dict, List, Literal, cast
 
@@ -33,6 +34,17 @@ async def call_model(
     Returns:
         dict: A dictionary containing the model's response message(s).
     """
+    use_fake = os.environ.get("REACT_AGENT_FAKE_MODEL", "").lower() in ("1", "true", "yes")
+    if use_fake:
+        return {
+            "messages": [
+                AIMessage(
+                    content="Harrison Chase is the founder of LangChain, and the firm ships batteries of technology.",
+                    additional_kwargs={"model": "fake"},
+                )
+            ]
+        }
+
     # Initialize Ollama chat model. runtime.context.model is expected to be like:
     # "qwen2.5-coder:14b" or "qwen2.5-coder:7b"
     model = ChatOllama(model=runtime.context.model).bind_tools(TOOLS)

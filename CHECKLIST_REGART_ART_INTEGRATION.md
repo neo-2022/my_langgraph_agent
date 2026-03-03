@@ -254,8 +254,8 @@
 
 ## 12) Multi-tab coordination: BroadcastChannel + fallback
 
-50. [ ] lock через BroadcastChannel  
-51. [ ] fallback через localStorage TTL+heartbeat (если BroadcastChannel нет)  
+50. [x] lock через BroadcastChannel
+51. [x] fallback через localStorage TTL+heartbeat (если BroadcastChannel нет)
     **Проверка:** unit-тесты + имитация отсутствия BroadcastChannel.
 
 ---

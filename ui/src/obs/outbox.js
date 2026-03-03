@@ -2,6 +2,7 @@ import { httpClient } from "./httpClient.js";
 import { normalizeRawEvent } from "./rawEvent.normalize.js";
 import { getSessionId } from "./session.js";
 import { defaultOutboxDb, createOutboxDb } from "./outbox.db.js";
+import { tabLock } from "./tabLock.js";
 
 const STATUS = Object.freeze({
   pending: "pending",
@@ -105,7 +106,12 @@ export class Outbox {
   async flush() {
     if (this._flushing) return;
     this._flushing = true;
+    let hasLock = false;
     try {
+      hasLock = await tabLock.acquire();
+      if (!hasLock) {
+        return;
+      }
       const batch = await this._collectBatch();
       if (!batch.length) return;
       await this._markInFlight(batch);
@@ -116,6 +122,11 @@ export class Outbox {
         await this._handleFlushError(batch, error);
       }
     } finally {
+      if (hasLock) {
+        tabLock.release();
+      } else {
+        this._scheduleFlush();
+      }
       this._flushing = false;
     }
   }

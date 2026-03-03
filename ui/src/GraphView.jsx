@@ -40,14 +40,19 @@ function readStoredPositions(assistantId) {
   }
 }
 
-function applyStoredPositions(nodes, stored) {
+function applyStoredPositions(nodes, stored, direction) {
   if (!stored || typeof stored !== "object" || !nodes.length) {
+    return nodes;
+  }
+  const positions = stored.positions || {};
+  const metadataDirection = stored.direction;
+  if (metadataDirection && String(metadataDirection) !== String(direction)) {
     return nodes;
   }
   return nodes.map((node) => {
     const id = String(node?.id ?? "");
     if (!id) return node;
-    const storedPos = stored[id];
+    const storedPos = positions[id];
     if (
       storedPos &&
       typeof storedPos === "object" &&
@@ -61,12 +66,12 @@ function applyStoredPositions(nodes, stored) {
           y: Number(storedPos.y),
         },
       };
-  }
-  return node;
-});
+    }
+    return node;
+  });
 }
 
-function persistStoredPositions(assistantId, nodes) {
+function persistStoredPositions(assistantId, nodes, direction) {
   const key = storageKeyForAssistant(assistantId);
   if (!key || typeof window === "undefined") return;
   if (!nodes?.length) return;
@@ -82,8 +87,12 @@ function persistStoredPositions(assistantId, nodes) {
     payload[id] = { x, y };
   });
   if (!Object.keys(payload).length) return;
+  const stored = {
+    direction: String(direction || ""),
+    positions: payload,
+  };
   try {
-    window.localStorage.setItem(key, JSON.stringify(payload));
+    window.localStorage.setItem(key, JSON.stringify(stored));
   } catch {
     // ignore
   }
@@ -511,7 +520,11 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
 
       const laid = layoutDagre(rfNodes, rfEdges, direction);
       const storedPositions = readStoredPositions(assistantId);
-      const nodesWithPositions = applyStoredPositions(laid.nodes, storedPositions);
+      const nodesWithPositions = applyStoredPositions(
+        laid.nodes,
+        storedPositions,
+        direction
+      );
 
       graphCache.direction = direction;
       graphCache.fingerprint = fingerprint;
@@ -631,7 +644,7 @@ setNodes([]);
   }, [edges]);
 
   useEffect(() => {
-    persistStoredPositions(assistantId, nodes);
+    persistStoredPositions(assistantId, nodes, direction);
   }, [assistantId, nodes]);
 
   // Tooltip patch for ReactFlow controls

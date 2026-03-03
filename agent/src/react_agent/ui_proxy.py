@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
@@ -96,70 +97,6 @@ REDACTED_MARKER = "***REDACTED***"
 # Где лежит .env (в корне agent-проекта)
 ENV_PATH = (Path(__file__).resolve().parent / ".." / ".." / ".env").resolve()
 
-# LangGraph service configuration
-LANGGRAPH_SYSTEMD_SERVICE = os.environ.get("LANGGRAPH_SYSTEMD_SERVICE", "").strip()
-DEFAULT_LANGGRAPH_SYSTEMD_SERVICE = os.environ.get("LANGGRAPH_DEFAULT_SYSTEMD_SERVICE", "my_langgraph.service").strip()
-
-
-_SERVICE_DETECTION_CANDIDATES = ("LangGraph.service",)
-_detected_langgraph_service: Optional[str] = None
-
-
-def _candidate_services() -> Iterable[str]:
-    yield DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
-    for svc in _SERVICE_DETECTION_CANDIDATES:
-        if svc != DEFAULT_LANGGRAPH_SYSTEMD_SERVICE:
-            yield svc
-
-
-def _langgraph_service_name() -> str:
-    if LANGGRAPH_SYSTEMD_SERVICE:
-        return LANGGRAPH_SYSTEMD_SERVICE
-
-    global _detected_langgraph_service
-    if _detected_langgraph_service:
-        info = _systemd_user_service_status(_detected_langgraph_service)
-        if info.get("active"):
-            return _detected_langgraph_service
-        _detected_langgraph_service = None
-
-    for svc in _candidate_services():
-        info = _systemd_user_service_status(svc)
-        if info.get("active"):
-            _detected_langgraph_service = svc
-            return svc
-
-    _detected_langgraph_service = DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
-    return _detected_langgraph_service
-
-# Кэш probe (чтобы не мучить большие модели постоянно)
-PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
-_PROBE_CACHE: Dict[str, Dict[str, Any]] = {}  # model -> { ok: bool, ts: float, raw: dict }
-
-app = FastAPI(title="UI Proxy", version="0.3.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-logger = logging.getLogger(__name__)
-
-
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    return {
-        "ok": True,
-        "langgraph_base": LANGGRAPH_BASE_URL,
-        "env_path": str(ENV_PATH),
-        "probe_cache_ttl_seconds": PROBE_CACHE_TTL_SECONDS,
-    }
-
-
-# ---------- helpers (.env) ----------
 
 def _read_env_lines() -> List[str]:
     if not ENV_PATH.exists():
@@ -199,6 +136,131 @@ def _get_env_key(key: str) -> str:
         if line.startswith(f"{key}="):
             return line.split("=", 1)[1].strip()
     return ""
+
+
+def _resolve_env_override(key: str, default: str) -> str:
+    env_value = os.environ.get(key, "").strip()
+    if env_value:
+        return env_value
+    file_value = _get_env_key(key)
+    if file_value:
+        return file_value
+    return default
+
+
+# LangGraph service configuration
+LANGGRAPH_SYSTEMD_SERVICE = _resolve_env_override("LANGGRAPH_SYSTEMD_SERVICE", "")
+DEFAULT_LANGGRAPH_SYSTEMD_SERVICE = _resolve_env_override("LANGGRAPH_DEFAULT_SYSTEMD_SERVICE", "my_langgraph.service")
+
+
+_SERVICE_DETECTION_CANDIDATES = ("LangGraph.service",)
+_detected_langgraph_service: Optional[str] = None
+
+
+def _candidate_services() -> Iterable[str]:
+    yield DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
+    for svc in _SERVICE_DETECTION_CANDIDATES:
+        if svc != DEFAULT_LANGGRAPH_SYSTEMD_SERVICE:
+            yield svc
+
+
+def _langgraph_service_name() -> str:
+    if LANGGRAPH_SYSTEMD_SERVICE:
+        return LANGGRAPH_SYSTEMD_SERVICE
+
+    global _detected_langgraph_service
+    if _detected_langgraph_service:
+        info = _systemd_user_service_status(_detected_langgraph_service)
+        if info.get("active"):
+            return _detected_langgraph_service
+        _detected_langgraph_service = None
+
+    for svc in _candidate_services():
+        info = _systemd_user_service_status(svc)
+        if info.get("active"):
+            _detected_langgraph_service = svc
+            return svc
+
+    _detected_langgraph_service = DEFAULT_LANGGRAPH_SYSTEMD_SERVICE
+    return _detected_langgraph_service
+
+# Кэш probe (чтобы не мучить большие модели постоянно)
+PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
+_PROBE_CACHE: Dict[str, Dict[str, Any]] = {}  # model -> { ok: bool, ts: float, raw: dict }
+
+app = FastAPI(title="UI Proxy", version="0.3.0")
+
+def _parse_list_env(key: str, default: List[str]) -> List[str]:
+    raw = os.environ.get(key, "").strip()
+    if not raw:
+        return default
+    values = [part.strip() for part in raw.split(",") if part.strip()]
+    return values if values else default
+
+ALLOWED_ORIGINS = _parse_list_env(
+    "UI_PROXY_CORS_ORIGINS",
+    [f"http://{PROXY_HOST}:{REACT_PORT}", f"http://127.0.0.1:{REACT_PORT}", f"http://{PROXY_HOST}:{UI_PROXY_PORT}", "http://localhost:8090"],
+)
+ALLOWED_METHODS = _parse_list_env("UI_PROXY_CORS_METHODS", ["GET", "POST", "OPTIONS"])
+ALLOWED_HEADERS = _parse_list_env(
+    "UI_PROXY_CORS_HEADERS",
+    [
+        "Authorization",
+        "Content-Type",
+        "X-Client-Id",
+        "X-Trace-Id",
+        "X-Span-Id",
+        "X-Request-Id",
+    ],
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=ALLOWED_METHODS,
+    allow_headers=ALLOWED_HEADERS,
+)
+
+logger = logging.getLogger(__name__)
+
+SENSITIVE_HEADERS = [
+    re.compile(r"(authorization:\s*)([^\\s,]+)", re.IGNORECASE),
+    re.compile(r"(x-api-key:\s*)([^\\s,]+)", re.IGNORECASE),
+    re.compile(r"(api[_-]?key:\s*)([^\\s,]+)", re.IGNORECASE),
+]
+
+
+class HeaderSanitizer(logging.Filter):
+    def _sanitize(self, value: Any) -> Any:
+        if isinstance(value, str):
+            result = value
+            for pattern in SENSITIVE_HEADERS:
+                result = pattern.sub(lambda match: f"{match.group(1)}***", result)
+            return result
+        if isinstance(value, dict):
+            return {k: self._sanitize(v) for k, v in value.items()}
+        if isinstance(value, tuple):
+            return tuple(self._sanitize(v) for v in value)
+        return value
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = self._sanitize(record.getMessage())
+        record.args = self._sanitize(record.args)
+        return True
+
+
+logger.addFilter(HeaderSanitizer())
+
+
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "langgraph_base": LANGGRAPH_BASE_URL,
+        "env_path": str(ENV_PATH),
+        "probe_cache_ttl_seconds": PROBE_CACHE_TTL_SECONDS,
+    }
 
 
 def _ensure_client_id() -> str:

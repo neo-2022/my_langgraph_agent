@@ -84,8 +84,17 @@ class Context:
 
     def __post_init__(self) -> None:
         """Fetch env vars for attributes that were not passed as args."""
+        model_field = next(f for f in fields(self) if f.name == "model")
+        model_specified = self.model != model_field.default
+
         for f in fields(self):
             if not f.init:
+                continue
+            if f.name == "model" and getattr(self, f.name) == model_field.default:
+                env_value = os.environ.get("MODEL", "").strip()
+                if env_value:
+                    setattr(self, "model", env_value)
+                    model_specified = True
                 continue
             if getattr(self, f.name) == f.default:
                 setattr(self, f.name, os.environ.get(f.name.upper(), f.default))
@@ -94,5 +103,5 @@ class Context:
         self.available_models = _get_ollama_models()
 
         # Safety: if the chosen model isn't installed, fall back to first available.
-        if self.available_models and self.model not in self.available_models:
+        if self.available_models and self.model not in self.available_models and not model_specified:
             self.model = self.available_models[0]

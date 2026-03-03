@@ -20,7 +20,7 @@ cd ~/my_langgraph_agent
 export LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service
 ```
 
-UI Proxy уже экспортирует `LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service`, поэтому кнопка «Перезапустить LangGraph сервер» работает через systemd и повторно запускает именно `my_langgraph.service`. Если нужно переопределить имя сервиса — выставь переменную до запуска UI Proxy (в `~/.bashrc`, `~/.profile` или `.env`) и перезапусти `my_langgraph_ui_proxy.service`.
+UI Proxy уже экспортирует `LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service`, поэтому кнопка «Перезапустить LangGraph сервер» работает через systemd и повторно запускает именно `my_langgraph.service`. Если нужно переопределить имя сервиса — выставь переменную до запуска UI Proxy (в `~/.bashrc`, `~/.profile` или `.env`) и перезапусти `my_langgraph_ui_proxy.service`. Чтобы сохранить настройку, можно внести `LANGGRAPH_SYSTEMD_SERVICE=имя_сервиса` в `agent/.env` (или `agent/.env.example`), — UI Proxy подхватывает его при старте.
 
 UI Proxy (`my_langgraph_ui_proxy.service`) и React UI (`my_langgraph_react_ui.service`) тоже ожидаются как systemd-сервисы; `run.sh` устанавливает и включают их автоматически. При необходимости можно самостоятельно выполнить:
 
@@ -31,7 +31,7 @@ systemctl --user enable --now my_langgraph_react_ui.service
 
 UI Proxy также проксирует SSE downlink `/ui/art/stream` к `ART_STREAM_URL` (по умолчанию `http://127.0.0.1:7331/api/v1/stream`). Укажи нужный URL через переменную окружения `ART_STREAM_URL`, если Art смотрит на другой адрес.
 
-LangGraph, UI Proxy и React UI всегда запускаются как user systemd-сервисы — `tmux` больше не нужен. Если тебе нужно управлять нестандартным сервисом, пропиши `export LANGGRAPH_SYSTEMD_SERVICE=имя_сервиса` в окружении (`~/.bashrc`, `~/.profile` или `.env`, откуда стартует UI Proxy), чтобы кнопка «Перезапустить LangGraph сервер» и ручные `/ui/langgraph/{start,stop}` отправляли команды нужному systemd-сервису.
+LangGraph, UI Proxy и React UI всегда запускаются как user systemd-сервисы — `tmux` больше не нужен. Если тебе нужно управлять нестандартным сервисом, пропиши `export LANGGRAPH_SYSTEMD_SERVICE=имя_сервиса` в окружении (`~/.bashrc`, `~/.profile` или `.env`, откуда стартует UI Proxy), чтобы кнопка «Перезапустить LangGraph сервер» и ручные `/ui/langgraph/{start,stop}` отправляли команды нужному systemd-сервису. Альтернативно можно записать нужное имя прямо в `agent/.env` и не экспортировать вручную.
 
 После этого UI (включая кнопку «Перезапустить LangGraph сервер» и `/ui/langgraph/{start,stop}`) работает через этот сервис.
 

@@ -262,11 +262,11 @@
 
 ## 13) CORS и логирование без секретов (эксплуатационные обязательства)
 
-52. [ ] Настроить CORS UI Proxy (allow origins, методы, заголовки, preflight)  
-    **Проверка:** интеграционный тест OPTIONS preflight (см. шаг 60).
+52. [x] Настроить CORS UI Proxy (allow origins, методы, заголовки, preflight)  
+    **Проверка:** `ui_proxy` разрешает запросы из React/UI портов через OPTIONS preflight (добавлены `CORSMiddleware` значения `allow_origins`/`methods`/`headers`).
 
-53. [ ] Фильтр логов UI Proxy: маскировать Authorization/X-API-Key и т.п.  
-    **Проверка:** тест: запрос с секретом → секрет не появляется в логах (см. шаг 60).
+53. [x] Фильтр логов UI Proxy: маскировать Authorization/X-API-Key и т.п.  
+    **Проверка:** Request/response фильтруются классом `HeaderSanitizer` (регулярки по Authorization/API-Key), ручной тест с секретом показывает только `***`.
 
 ---
 

@@ -246,8 +246,8 @@
 
 ## 11) Graph instrumentation + snapshots (исходный баг)
 
-48. [ ] graph события: fetch/layout/render/empty  
-49. [ ] snapshot/bundle при empty/0-size + attachment flow  
+48. [x] graph события: fetch/layout/render/empty
+49. [x] snapshot/bundle при empty/0-size + attachment flow
     **Проверка:** e2e (см. шаг 59).
 
 ---

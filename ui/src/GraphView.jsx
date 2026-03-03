@@ -19,6 +19,36 @@ const graphCache = {
   fingerprint: "",
 };
 
+const GRAPH_UI_CONTEXT = { ui: { tab: "graph" }, origin: "graph" };
+
+function pushGraphEvent(event = {}) {
+  if (typeof window === "undefined") return;
+  const target = window.__DBG0__;
+  if (!target || typeof target.pushEvent !== "function") return;
+  try {
+    target.pushEvent({
+      level: event.level || "info",
+      message: event.message,
+      name: event.name || "graph.event",
+      payload: event.payload,
+      attrs: event.attrs,
+      ...GRAPH_UI_CONTEXT,
+    });
+  } catch {}
+}
+
+function pushGraphSnapshot(data = {}) {
+  if (typeof window === "undefined") return;
+  const target = window.__DBG0__;
+  if (!target || typeof target.pushSnapshot !== "function") return;
+  try {
+    target.pushSnapshot({
+      channel: "graph",
+      data,
+    });
+  } catch {}
+}
+
 const GRAPH_POS_STORAGE_PREFIX = "lg_graph_positions:";
 
 function storageKeyForAssistant(assistantId) {
@@ -470,6 +500,12 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     const key = `${assistantId}|${direction}`;
     const now = Date.now();
 
+    pushGraphEvent({
+      name: "graph.fetch",
+      message: "Запрос графа",
+      payload: { assistantId, direction, status: "start" },
+    });
+
     if (inFlightRef.current) return;
     if (lastFetchRef.current.key === key && now - lastFetchRef.current.ts < 1200) return;
 
@@ -490,6 +526,18 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         signal: ctrl.signal,
       });
 
+      pushGraphEvent({
+        name: "graph.fetch",
+        message: "Граф получен",
+        payload: {
+          assistantId,
+          direction,
+          status: "success",
+          nodes: Array.isArray(data?.nodes) ? data.nodes.length : 0,
+          edges: Array.isArray(data?.edges) ? data.edges.length : 0,
+        },
+      });
+
       const apiNodes = Array.isArray(data?.nodes) ? data.nodes : [];
       const apiEdges = Array.isArray(data?.edges) ? data.edges : [];
 
@@ -504,6 +552,11 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         graphCache.edges.length > 0;
 
       if (canReuseCache) {
+        pushGraphEvent({
+          name: "graph.fetch",
+          message: "Кэш графа использован",
+          payload: { assistantId, direction, status: "cache" },
+        });
         setNodes(graphCache.nodes);
         setEdges(graphCache.edges);
         setGraphVersion((v) => v + 1);
@@ -522,10 +575,63 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         direction
       );
 
+      pushGraphEvent({
+        name: "graph.layout",
+        message: "Позиционирование узлов",
+        payload: {
+          assistantId,
+          direction,
+          layout: "dagre",
+          nodes: nodesWithPositions.length,
+          edges: laid.edges.length,
+        },
+      });
+
       graphCache.direction = direction;
       graphCache.fingerprint = fingerprint;
       graphCache.nodes = nodesWithPositions;
       graphCache.edges = laid.edges;
+
+      const snapshotData = {
+        assistantId,
+        direction,
+        layout: "dagre",
+        fingerprint,
+        nodes: nodesWithPositions.length,
+        edges: laid.edges.length,
+        details: {
+          nodes: nodesWithPositions.map((node) => ({
+            id: node.id,
+            label: node.data?.label,
+            position: node.position,
+          })),
+          edges: laid.edges.map((edge) => ({
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+          })),
+        },
+        status: nodesWithPositions.length ? "populated" : "empty",
+      };
+      pushGraphSnapshot(snapshotData);
+      pushGraphEvent({
+        name: "graph.render",
+        message: "Граф отрисован",
+        payload: {
+          assistantId,
+          direction,
+          nodes: nodesWithPositions.length,
+          edges: laid.edges.length,
+        },
+      });
+      if (nodesWithPositions.length === 0) {
+        pushGraphEvent({
+          name: "graph.empty",
+          message: "Граф пуст",
+          level: "warn",
+          payload: { assistantId, direction },
+        });
+      }
 
       setNodes(nodesWithPositions);
       setEdges(laid.edges);
@@ -535,18 +641,33 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       kick({ padding: 0.25, duration: 0 });
     } catch (e) {
       if (String(e?.name) !== "AbortError") {
-        setError(String(e?.message || e));
-                try {
+        const message = String(e?.message || e);
+        setError(message);
+        try {
           window.__DBG0__?.pushError?.(e, {
             scope: "graph",
             severity: "error",
-            message: String(e?.message || e),
+            message,
             ctx: { where: "GraphView.catch" },
             actions: ["copy", "open"],
           });
         } catch {}
-        // DBG0_GRAPHVIEW_CATCH
-setNodes([]);
+        pushGraphEvent({
+          name: "graph.fetch",
+          level: "error",
+          message: "Ошибка загрузки графа",
+          payload: { assistantId, direction, error: message },
+        });
+        const snapshotData = {
+          assistantId,
+          direction,
+          nodes: 0,
+          edges: 0,
+          status: "empty",
+          error: message,
+        };
+        pushGraphSnapshot(snapshotData);
+        setNodes([]);
         setEdges([]);
         setGraphVersion((v) => v + 1);
       }

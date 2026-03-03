@@ -224,11 +224,14 @@
 
 ## 9) Provider Gateway (облака/модели): таймауты, редактирование, “замена транспорта”
 
-41. [ ] Единый Provider Gateway API в UI Proxy (UI не ходит в облака)  
-42. [ ] Таймауты всех исходящих provider вызовов в UI Proxy  
-43. [ ] Инструментация provider.* событий + редактирование (и в событиях, и в логах)  
-44. [ ] Переключатель транспорта A/B (сейчас → providers; потом → Art Gateway)  
-    **Проверка:** интеграционные тесты (см. шаг 60–61).
+41. [x] Единый Provider Gateway API в UI Proxy (UI не ходит в облака)  
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_provider_gateway_logs_events`
+42. [x] Таймауты всех исходящих provider вызовов в UI Proxy  
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_provider_gateway_times_out`
+43. [x] Инструментация provider.* событий + редактирование (и в событиях, и в логах)  
+    **Проверка:** `caplog`-тест (см. шаг 60) — `test_provider_gateway_logs_events` покрывает `provider.request/response`
+44. [x] Переключатель транспорта A/B (сейчас → providers; потом → Art Gateway)  
+    **Проверка:** `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_provider_transport_switch_to_art`
 
 ---
 

@@ -53,6 +53,10 @@ PROXY_HOST = os.environ.get("UI_PROXY_HOST", "127.0.0.1")
 PROXY_PORT = int(os.environ.get("UI_PROXY_PORT", "8090"))
 CLIENT_ID_KEY = "UI_CLIENT_ID"
 INGEST_BEARER_TOKEN = os.environ.get("REGART_INGEST_TOKEN", "")
+PROVIDER_DEFAULT_BASE = os.environ.get("PROVIDER_BASE_URL", "http://127.0.0.1:9555/provider")
+PROVIDER_CONNECT_TIMEOUT = float(os.environ.get("PROVIDER_CONNECT_TIMEOUT", "3"))
+PROVIDER_READ_TIMEOUT = float(os.environ.get("PROVIDER_READ_TIMEOUT", "10"))
+PROVIDER_WRITE_TIMEOUT = float(os.environ.get("PROVIDER_WRITE_TIMEOUT", "10"))
 
 CORRELATION_HEADER_NAMES = ("x-trace-id", "x-span-id", "x-request-id")
 ALLOWED_ATTACHMENT_MIME = {
@@ -377,6 +381,67 @@ async def _forward_to_art(
         return response.json()
 
 
+def _get_provider_transport_mode() -> str:
+    return os.environ.get("PROVIDER_TRANSPORT_MODE", "providers").lower()
+
+
+def _get_provider_base_url() -> str:
+    return os.environ.get("PROVIDER_BASE_URL", PROVIDER_DEFAULT_BASE).rstrip("/")
+
+
+def _build_provider_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        timeout=None,
+        connect=PROVIDER_CONNECT_TIMEOUT,
+        read=PROVIDER_READ_TIMEOUT,
+        write=PROVIDER_WRITE_TIMEOUT,
+    )
+
+
+def _log_provider_event(kind: str, provider_id: str, client_id: str, mode: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    info = {
+        "provider_id": provider_id,
+        "client_id": client_id,
+        "mode": mode,
+    }
+    if extra:
+        info.update(extra)
+    logger.info("provider.%s %s", kind, info)
+
+
+async def _forward_to_provider(
+    provider_id: str,
+    payload: Dict[str, Any],
+    client_id: str,
+    correlation_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    mode = _get_provider_transport_mode()
+    _log_provider_event("request", provider_id, client_id, mode, {"payload_keys": list(payload.keys())})
+    try:
+        if mode == "art":
+            logger.info("observability_gap.provider_transport_switch: %s -> art", provider_id)
+            response = await _forward_to_art(payload.get("events", []), client_id, correlation_headers)
+            _log_provider_event("response", provider_id, client_id, mode, {"status": response.get("ok")})
+            return response
+
+        url = f"{_get_provider_base_url()}/{provider_id}"
+        async with httpx.AsyncClient(timeout=_build_provider_timeout()) as client:
+            headers = {"X-Client-Id": client_id}
+            if correlation_headers:
+                headers.update(correlation_headers)
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            body = response.json()
+            _log_provider_event("response", provider_id, client_id, mode, {"status": response.status_code})
+            return body
+    except httpx.TimeoutException as exc:
+        logger.warning("observability_gap.provider_timeout: %s", exc)
+        raise HTTPException(status_code=504, detail="provider timeout") from exc
+    except httpx.RequestError as exc:
+        logger.warning("observability_gap.provider_request_error: %s", exc)
+        raise HTTPException(status_code=502, detail="provider request error") from exc
+
+
 # ---------- tmux helpers ----------
 
 def _tmux_has_session(name: str) -> bool:
@@ -685,6 +750,13 @@ async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, 
             },
             status_code=502,
         )
+
+
+@app.post("/ui/provider/{provider_id}")
+async def ui_provider_call(provider_id: str, request: Request, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    client_id = request.headers.get("x-client-id") or _ensure_client_id()
+    correlation_headers = _collect_correlation_headers(request)
+    return await _forward_to_provider(provider_id, payload or {}, client_id, correlation_headers)
 
 
 @app.post("/ui/ingest/events")

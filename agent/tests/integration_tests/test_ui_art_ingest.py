@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Dict
@@ -264,6 +265,92 @@ async def test_ingest_attachments_detects_malware(monkeypatch, ingest_client):
     response = await ingest_client.post("/ui/ingest/attachments", headers=headers, files=files)
     assert response.status_code == 400
     assert "malware" in response.json().get("detail", "")
+
+
+@pytest.mark.anyio
+async def test_provider_gateway_times_out(monkeypatch, proxied_client, caplog):
+    client, _ = proxied_client
+    async def slow_handler(reader, writer):
+        await reader.read(65536)
+        await asyncio.sleep(0.5)
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(slow_handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    server_task = asyncio.create_task(server.serve_forever())
+    monkeypatch.setenv("PROVIDER_BASE_URL", f"http://127.0.0.1:{port}")
+    monkeypatch.setattr(ui_proxy, "PROVIDER_CONNECT_TIMEOUT", 0.1)
+    monkeypatch.setattr(ui_proxy, "PROVIDER_READ_TIMEOUT", 0.1)
+    monkeypatch.setattr(ui_proxy, "PROVIDER_WRITE_TIMEOUT", 0.1)
+    caplog.set_level(logging.WARNING)
+
+    try:
+        response = await client.post(
+            "/ui/provider/test", json={"foo": "bar"}, headers={"x-client-id": "test-client"}
+        )
+    finally:
+        server.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.wait_closed()
+
+    assert response.status_code == 504
+    assert "provider_timeout" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_provider_gateway_logs_events(monkeypatch, proxied_client, caplog):
+    client, _ = proxied_client
+    async def handler(reader, writer):
+        await reader.read(65536)
+        writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"ok\":true}")
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    server_task = asyncio.create_task(server.serve_forever())
+    monkeypatch.setenv("PROVIDER_BASE_URL", f"http://127.0.0.1:{port}")
+    caplog.set_level(logging.INFO)
+
+    try:
+        response = await client.post(
+            "/ui/provider/run", json={"foo": "bar"}, headers={"x-client-id": "test-client"}
+        )
+    finally:
+        server.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.wait_closed()
+
+    assert response.status_code == 200
+    assert "provider.request" in caplog.text
+    assert "provider.response" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_provider_transport_switch_to_art(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    called: Dict[str, Any] = {}
+    async def fake_forward(events, client_id, correlation_headers):
+        called["events"] = events
+        return {"ok": True, "client": client_id}
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", fake_forward)
+    monkeypatch.setenv("PROVIDER_TRANSPORT_MODE", "art")
+
+    response = await client.post(
+        "/ui/provider/switch", json={"events": [{"kind": "ui.test"}]}, headers={"x-client-id": "test-client"}
+    )
+
+    assert response.json().get("ok") is True
+    assert called.get("events") == [{"kind": "ui.test"}]
 
 @pytest.mark.anyio
 async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):

@@ -1014,9 +1014,9 @@ return null;
     () => [
       { id: "general", title: "General", ruTitle: "Общее" },
       { id: "local_models", title: "Local models", ruTitle: "Локальные модели" },
+      { id: "cloud_models", title: "Cloud models", ruTitle: "Облачные модели" },
       { id: "tools", title: "Tools", ruTitle: "Инструменты" },
       { id: "journal", title: "Journal", ruTitle: "Журнал" },
-      { id: "cloud_models", title: "Cloud models", ruTitle: "Облачные модели" },
     ],
     []
   );

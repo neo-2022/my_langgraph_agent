@@ -19,24 +19,52 @@ UI Proxy API для React UI.
 
 from __future__ import annotations
 
+import logging
 import os
+import sqlite3
 import subprocess
 import time
+import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 
 from react_agent.context import Context
+from react_agent.obs_models import RawEventModel
+from react_agent.spool import spool
 from react_agent.tools import probe_tool_calls, probe_all_models_tool_calls
 
 
 LANGGRAPH_BASE_URL = os.environ.get("LANGGRAPH_BASE_URL", "http://127.0.0.1:2024")
+ART_INGEST_URL = os.environ.get("ART_INGEST_URL", "http://127.0.0.1:7331/api/v1/ingest")
+ART_CONNECT_TIMEOUT = float(os.environ.get("ART_CONNECT_TIMEOUT", "3"))
+ART_READ_TIMEOUT = float(os.environ.get("ART_READ_TIMEOUT", "10"))
+ART_WRITE_TIMEOUT = float(os.environ.get("ART_WRITE_TIMEOUT", "10"))
 PROXY_HOST = os.environ.get("UI_PROXY_HOST", "127.0.0.1")
 PROXY_PORT = int(os.environ.get("UI_PROXY_PORT", "8090"))
+CLIENT_ID_KEY = "UI_CLIENT_ID"
+INGEST_BEARER_TOKEN = os.environ.get("REGART_INGEST_TOKEN", "")
+
+CORRELATION_HEADER_NAMES = ("x-trace-id", "x-span-id", "x-request-id")
+REDACT_SENSITIVE_KEYS = {
+    "authorization",
+    "api_key",
+    "client_secret",
+    "credentials",
+    "password",
+    "refresh_token",
+    "secret",
+    "token",
+    "access_token",
+}
+REDACTED_MARKER = "***REDACTED***"
+
 
 # Где лежит .env (в корне agent-проекта)
 ENV_PATH = (Path(__file__).resolve().parent / ".." / ".." / ".env").resolve()
@@ -66,6 +94,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -118,6 +148,148 @@ def _get_env_key(key: str) -> str:
         if line.startswith(f"{key}="):
             return line.split("=", 1)[1].strip()
     return ""
+
+
+def _ensure_client_id() -> str:
+    existing = _get_env_key(CLIENT_ID_KEY)
+    if existing:
+        return existing
+    new_id = uuid.uuid4().hex
+    _set_env_key(CLIENT_ID_KEY, new_id)
+    return new_id
+
+
+def _build_ingest_allowlist() -> Set[str]:
+    raw = os.environ.get("REGART_INGEST_CLIENT_IDS", "").strip()
+    ids = {part.strip() for part in raw.split(",") if part.strip()}
+    if ids:
+        return ids
+    return {_ensure_client_id()}
+
+
+ALLOWED_INGEST_CLIENT_IDS = _build_ingest_allowlist()
+
+
+def _authorize_ingest(request: Request) -> str:
+    header = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not header or not header.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    token = header.split(" ", 1)[1]
+    if not INGEST_BEARER_TOKEN:
+        raise HTTPException(status_code=503, detail="Ingest token not configured")
+    if token != INGEST_BEARER_TOKEN:
+        raise HTTPException(status_code=403, detail="invalid ingest token")
+
+    client_id = request.headers.get("x-client-id") or request.headers.get("X-Client-Id")
+    if not client_id:
+        raise HTTPException(status_code=403, detail="client id required")
+    if client_id not in ALLOWED_INGEST_CLIENT_IDS:
+        raise HTTPException(status_code=403, detail="client id is not allowlisted")
+    return client_id
+
+
+def _results_retry(events: Iterable[Dict[str, Any]], reason: str) -> List[Dict[str, Any]]:
+    return [
+        {
+            "event_id": ev.get("event_id"),
+            "status": "retryable",
+            "reason": reason,
+        }
+        for ev in events
+    ]
+
+
+async def _spool_events(events: Iterable[Dict[str, Any]], client_id: str, reason: str) -> None:
+    try:
+        await spool.add_events(events, client_id)
+    except sqlite3.DatabaseError as exc:
+        logger.exception("spool failure during snapshot: %s", exc)
+
+
+def _collect_correlation_headers(request: Request) -> Dict[str, str]:
+    headers: Dict[str, str] = {}
+    for name in CORRELATION_HEADER_NAMES:
+        value = request.headers.get(name)
+        if value:
+            headers[name] = value
+    return headers
+
+
+def _is_sensitive_key(name: Optional[str]) -> bool:
+    return bool(name and name.lower() in REDACT_SENSITIVE_KEYS)
+
+
+def _redact_sensitive_value(value: Any, name: Optional[str] = None) -> Any:
+    if _is_sensitive_key(name):
+        return REDACTED_MARKER
+    if isinstance(value, dict):
+        return {k: _redact_sensitive_value(v, k) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_sensitive_value(item) for item in value]
+    return value
+
+
+def _redact_event(raw: Dict[str, Any]) -> Dict[str, Any]:
+    return _redact_sensitive_value(raw)
+
+
+async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dict[str, Any]], client_id: str) -> None:
+    mapping: Dict[str, Dict[str, Any]] = {}
+    for ev in events:
+        eid = ev.get("event_id")
+        if isinstance(eid, str):
+            mapping[eid] = ev
+    moved = 0
+    for ack in results:
+        status = str(ack.get("status", "")).lower()
+        if status in ("rejected", "invalid", "permanent"):
+            event_id = ack.get("event_id")
+            raw_event = mapping.get(event_id)
+            if raw_event:
+                await spool.move_to_dlq(
+                    event_id, client_id, raw_event, ack.get("reason", "rejected"), ack.get("attempts", 0)
+                )
+                moved += 1
+    if moved:
+        logger.warning("observability_gap.dlq_non_empty: %s events moved to DLQ", moved)
+
+
+def _build_art_timeout() -> httpx.Timeout:
+    return httpx.Timeout(
+        timeout=None,
+        connect=ART_CONNECT_TIMEOUT,
+        read=ART_READ_TIMEOUT,
+        write=ART_WRITE_TIMEOUT,
+    )
+
+
+def _build_art_envelope(events: List[Dict[str, Any]], client_id: str) -> Dict[str, Any]:
+    return {
+        "source": {
+            "id": client_id,
+            "type": "regart.ui",
+            "hostname": PROXY_HOST,
+            "version": "ui-proxy-0.3.0",
+        },
+        "events": events,
+    }
+
+
+async def _forward_to_art(
+    events: List[Dict[str, Any]],
+    client_id: str,
+    correlation_headers: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    if not events:
+        return {"ok": True, "results": []}
+    envelope = _build_art_envelope(events, client_id)
+    async with httpx.AsyncClient(timeout=_build_art_timeout()) as client:
+        headers = {"X-Client-Id": client_id}
+        if correlation_headers:
+            headers.update(correlation_headers)
+        response = await client.post(ART_INGEST_URL, json=envelope, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
 
 # ---------- tmux helpers ----------
@@ -362,6 +534,121 @@ def ui_models() -> Dict[str, Any]:
         "current": current,
         "default": ctx.model,
     }
+
+
+@app.get("/ui/client-info")
+def ui_client_info() -> Dict[str, Any]:
+    """
+    Безопасный (non-secret) идентификатор клиента REGART.
+    """
+    return {
+        "ok": True,
+        "client_id": _ensure_client_id(),
+        "proxy_host": PROXY_HOST,
+        "proxy_port": PROXY_PORT,
+    }
+
+
+@app.post("/ui/art/ingest")
+async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
+    client_id = request.headers.get("x-client-id") or _ensure_client_id()
+    events = payload.get("events")
+    if not isinstance(events, list):
+        raise HTTPException(status_code=400, detail="events must be a list")
+
+    correlation_headers = _collect_correlation_headers(request)
+
+    try:
+        response = await _forward_to_art(events, client_id, correlation_headers)
+        results = response.get("results")
+        if not isinstance(results, list):
+            results = [
+                {
+                    "event_id": event.get("event_id"),
+                    "status": "accepted",
+                }
+                for event in events
+            ]
+        payload_ack = {
+            "ok": response.get("ok", True),
+            "accepted": response.get("accepted"),
+            "retry_after_ms": response.get("retry_after_ms"),
+            "results": results,
+        }
+        await _maybe_move_to_dlq(results, events, client_id)
+        return payload_ack
+    except httpx.TimeoutException as exc:
+        await _spool_events(events, client_id, "art_timeout")
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "upstream_timeout",
+                "reason": str(exc),
+                "results": _results_retry(events, "art_timeout"),
+                "retry_after_ms": 1000,
+            },
+            status_code=504,
+        )
+    except httpx.RequestError as exc:
+        await _spool_events(events, client_id, "art_request_error")
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "upstream_error",
+                "reason": str(exc),
+                "results": _results_retry(events, "art_request_error"),
+            },
+            status_code=502,
+        )
+
+
+@app.post("/ui/ingest/events")
+async def ui_ingest_events(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
+    client_id = _authorize_ingest(request)
+    events = payload.get("events")
+    if not isinstance(events, list):
+        events = []
+    validated: List[RawEventModel] = []
+    redacted_events = []
+
+    for idx, candidate in enumerate(events):
+        try:
+            model = RawEventModel.model_validate(candidate or {})
+        except ValidationError as exc:
+            logger.warning(
+                "ui_ingest_events: validation failed idx=%s client=%s errors=%s",
+                idx,
+                client_id,
+                exc.errors(),
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={"index": idx, "errors": exc.errors()},
+            )
+        validated.append(model)
+        redacted_events.append(_redact_event(model.model_dump()))
+
+    logger.info(
+        "ui_ingest_events: client=%s received=%s validated=%s",
+        client_id,
+        len(events),
+        len(validated),
+    )
+    return {
+        "ok": True,
+        "received": len(events),
+        "validated": len(validated),
+        "client_id": client_id,
+        "redacted_events": redacted_events,
+    }
+
+
+@app.post("/ui/ingest/attachments")
+async def ui_ingest_attachments(request: Request) -> Dict[str, Any]:
+    client_id = _authorize_ingest(request)
+    form = await request.form()
+    files = [value for value in form.values() if hasattr(value, "filename")]
+    return {"ok": True, "client_id": client_id, "files": len(files)}
 
 
 @app.post("/ui/model")

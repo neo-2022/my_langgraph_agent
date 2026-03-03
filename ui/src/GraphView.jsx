@@ -403,7 +403,17 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     } catch (e) {
       if (String(e?.name) !== "AbortError") {
         setError(String(e?.message || e));
-        setNodes([]);
+                try {
+          window.__DBG0__?.pushError?.(e, {
+            scope: "graph",
+            severity: "error",
+            message: String(e?.message || e),
+            ctx: { where: "GraphView.catch" },
+            actions: ["copy", "open"],
+          });
+        } catch {}
+        // DBG0_GRAPHVIEW_CATCH
+setNodes([]);
         setEdges([]);
       }
     } finally {

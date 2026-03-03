@@ -49,7 +49,83 @@ export function initDebuggerLevel0() {
     }
   }
 
-  // ----------------------------
+
+  function parseStackLocation(stackText) {
+    // Достаём file:line:col из stacktrace (Chrome/Firefox).
+    // Это парсинг данных, не "угадайка".
+    try {
+      const s = String(stackText || "");
+      if (!s) return null;
+      const lines = s.split(/\r?\n/).map((x) => String(x).trim()).filter(Boolean);
+
+      // Примеры:
+      // at fn (http://127.0.0.1:5175/src/App.jsx:123:45)
+      // at http://127.0.0.1:5175/src/App.jsx:123:45
+      // at /src/App.jsx:123:45
+      const re1 = /\(?((?:https?:\/\/|\/).+?):(\d+):(\d+)\)?$/;
+
+      for (const ln of lines) {
+        const mm = ln.match(re1);
+        if (!mm) continue;
+
+        const file = String(mm[1] || "");
+        const line = Number(mm[2] || 0) || 0;
+        const col = Number(mm[3] || 0) || 0;
+
+        if (!file || !line) continue;
+
+        return { file, line, col: col || undefined };
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractCauses(input, maxDepth = 6) {
+    // Цепочка причин из Error.cause / AggregateError.errors.
+    // Только по структуре данных, без правил по строкам.
+    const out = [];
+    const seen = new Set();
+
+    function packOne(e, note) {
+      if (!e) return;
+      if (seen.has(e)) return;
+      seen.add(e);
+
+      const obj = e && typeof e === "object" ? e : { value: e };
+      const msg = toStr(obj.message) || toStr(obj.name) || toStr(obj) || "(no message)";
+      const st = toStr(obj.stack);
+      out.push({ message: msg, stack: st || undefined, note: note || undefined });
+    }
+
+    function walk(e, depth) {
+      if (!e || depth > maxDepth) return;
+
+      // AggregateError
+      try {
+        if (typeof AggregateError !== "undefined" && e instanceof AggregateError) {
+          packOne(e, "AggregateError");
+          const errs = Array.isArray(e.errors) ? e.errors : [];
+          for (const sub of errs.slice(0, 10)) walk(sub, depth + 1);
+          return;
+        }
+      } catch {}
+
+      packOne(e);
+
+      // cause
+      try {
+        const c = e && typeof e === "object" ? e.cause : undefined;
+        if (c) walk(c, depth + 1);
+      } catch {}
+    }
+
+    walk(input, 0);
+    return out.length ? out : null;
+  }
+
+// ----------------------------
   // 1) Хранилище (ring buffers)
   // ----------------------------
   const state = {
@@ -156,10 +232,14 @@ export function initDebuggerLevel0() {
 
     // location: {file,line,col,function?} — пока берём только то, что явно дали
     const location =
-      o.location && typeof o.location === "object" ? o.location : undefined;
+        o.location && typeof o.location === "object"
+          ? o.location
+          : stack
+          ? parseStackLocation(stack)
+          : undefined;
 
     // causes / breadcrumbs / related — пока принимаем если передали (без угадайки)
-    const causes = Array.isArray(o.causes) ? o.causes : undefined;
+    const causes = Array.isArray(o.causes) ? o.causes : extractCauses(input);
     const breadcrumbs = Array.isArray(o.breadcrumbs) ? o.breadcrumbs : undefined;
     const related = Array.isArray(o.related) ? o.related : undefined;
 
@@ -422,9 +502,19 @@ export function initDebuggerLevel0() {
 #dbg0-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .dbg0-btn{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#eee;border-radius:10px;padding:7px 10px;cursor:pointer;font-size:13px}
 .dbg0-btn:hover{background:rgba(255,255,255,.12)}
+  #dbg0-tip{position:fixed;z-index:2147483647;display:none;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.25;color:rgba(255,255,255,0.92);background:rgba(0,0,0,0.82);border:1px solid rgba(255,255,255,0.14);box-shadow:0 10px 30px rgba(0,0,0,0.35);max-width:320px;white-space:pre-line;pointer-events:none}
 #dbg0-body{padding:12px 14px}
 #dbg0-kv{display:grid;grid-template-columns:140px 1fr;gap:6px 10px;font-size:13px;margin-bottom:12px}
 #dbg0-pre{white-space:pre-wrap;word-break:break-word;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px;font-size:12px;line-height:1.35}
+  #dbg0-errors{margin-top:12px;display:grid;gap:8px}
+  .dbg0-err{border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.04);padding:10px}
+  .dbg0-err-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .dbg0-pill{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:12px;opacity:.85}
+  .dbg0-err-msg{margin-top:6px;font-weight:700}
+  .dbg0-err-where{margin-top:4px;font-size:12px;opacity:.9}
+  .dbg0-err-why{margin-top:4px;font-size:12px;opacity:.9}
+  .dbg0-copy-mini{appearance:none;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#eee;border-radius:10px;padding:5px 8px;cursor:pointer;font-size:12px;margin-left:auto}
+  .dbg0-copy-mini:hover{background:rgba(255,255,255,.12)}
 #dbg0-note{opacity:.85;font-size:12px;margin-top:10px}
 `;
 
@@ -452,20 +542,83 @@ export function initDebuggerLevel0() {
   btnCopy.type = "button";
   btnCopy.className = "dbg0-btn";
   btnCopy.textContent = "Copy details";
+  btnCopy.setAttribute("data-tip", "Скопировать детали последней ошибки\n(сообщение и stacktrace).");
 
   const btnCopyBundle = document.createElement("button");
   btnCopyBundle.type = "button";
   btnCopyBundle.className = "dbg0-btn";
   btnCopyBundle.textContent = "Copy bundle";
+  btnCopyBundle.setAttribute("data-tip", "Скопировать Debug Bundle\n(ошибки/события/сеть/снапшоты).");
 
   const btnClose = document.createElement("button");
   btnClose.type = "button";
   btnClose.className = "dbg0-btn";
   btnClose.textContent = "Close";
+  btnClose.setAttribute("data-tip", "Закрыть окно отладчика (Level 0).");
 
   actions.appendChild(btnCopy);
   actions.appendChild(btnCopyBundle);
   actions.appendChild(btnClose);
+
+  // Tooltip (без React): свои подсказки на русском (без title)
+  const tipEl = document.createElement("div");
+  tipEl.id = "dbg0-tip";
+
+  function ensureTipMounted() {
+    if (!document.body.contains(tipEl)) document.body.appendChild(tipEl);
+  }
+
+  function showTipFor(btn) {
+    try {
+      const txt = String(btn?.getAttribute("data-tip") || "");
+      if (!txt) return;
+
+      ensureMounted();
+      ensureTipMounted();
+
+      tipEl.textContent = txt;
+
+      const r = btn.getBoundingClientRect();
+      const margin = 10;
+
+      // сначала показываем, потом измеряем
+      tipEl.style.display = "block";
+      const tr = tipEl.getBoundingClientRect();
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      const spaceBelow = vh - r.bottom - margin;
+      const spaceAbove = r.top - margin;
+
+      const wantUp = spaceAbove >= tr.height + margin && spaceAbove > spaceBelow;
+      let top = wantUp ? r.top - tr.height - margin : r.bottom + margin;
+
+      // clamp Y
+      top = Math.max(margin, Math.min(vh - tr.height - margin, top));
+
+      // по центру кнопки, clamp X
+      let left = r.left + r.width / 2;
+      const halfW = tr.width / 2;
+      left = Math.max(margin + halfW, Math.min(vw - margin - halfW, left));
+
+      tipEl.style.left = left + "px";
+      tipEl.style.top = top + "px";
+      tipEl.style.transform = "translateX(-50%)";
+    } catch {}
+  }
+
+  function hideTip() {
+    try { tipEl.style.display = "none"; } catch {}
+  }
+
+  function bindTip(btn) {
+    if (!btn) return;
+    btn.addEventListener("mouseenter", () => showTipFor(btn));
+    btn.addEventListener("mouseleave", () => hideTip());
+    btn.addEventListener("focus", () => showTipFor(btn));
+    btn.addEventListener("blur", () => hideTip());
+  }
 
   head.appendChild(title);
   head.appendChild(actions);
@@ -486,6 +639,9 @@ export function initDebuggerLevel0() {
 
   body.appendChild(kv);
   body.appendChild(pre);
+  const errorsBox = document.createElement("div");
+  errorsBox.id = "dbg0-errors";
+  body.appendChild(errorsBox);
   body.appendChild(note);
 
   panel.appendChild(head);
@@ -513,6 +669,161 @@ export function initDebuggerLevel0() {
 
       kv.appendChild(kEl);
       kv.appendChild(vEl);
+    }
+
+    function pick(obj, key, fallback = "") {
+      try {
+        return obj && typeof obj === "object" && obj[key] !== undefined ? obj[key] : fallback;
+      } catch {
+        return fallback;
+      }
+    }
+
+    function toActionList(err) {
+      const d = err && typeof err === "object" ? err.details : null;
+      const acts0 = d && typeof d === "object" ? d.actions : null;
+      return Array.isArray(acts0) ? acts0 : [];
+    }
+
+    function actionLabelRu(a) {
+      const typ = String(pick(a, "type", "") || "").trim();
+      const ep = String(pick(a, "endpoint", "") || "").trim();
+
+      // Только текст/лейбл (логика не завязана на это)
+      if (typ === "restart_langgraph" || ep === "/ui/restart-langgraph") return "Перезапустить LangGraph";
+      if (typ === "langgraph_start" || ep === "/ui/langgraph/start") return "Запустить LangGraph";
+      if (typ === "langgraph_stop" || ep === "/ui/langgraph/stop") return "Остановить LangGraph";
+      if (typ === "reload") return "Перезагрузить страницу";
+      if (typ) return typ;
+      return ep || "action";
+    }
+
+    async function runEndpoint(endpoint, method = "POST") {
+      const ep = String(endpoint || "");
+      if (!ep) return { ok: false, error: "empty endpoint" };
+
+      try {
+        const r = await fetch(ep, { method });
+        const txt = await r.text().catch(() => "");
+        let js = null;
+        try {
+          js = txt ? JSON.parse(txt) : null;
+        } catch {}
+        if (!r.ok) return { ok: false, status: r.status, text: txt, json: js };
+        return { ok: true, status: r.status, text: txt, json: js };
+      } catch (e) {
+        return { ok: false, error: String(e?.message || e) };
+      }
+    }
+
+    function clearActs() {
+      try {
+        acts.textContent = "";
+      } catch {}
+    }
+
+    function addHumanRow(k, v) {
+      const row = document.createElement("div");
+      row.className = "dbg0-human-row";
+
+      const kEl = document.createElement("span");
+      kEl.className = "dbg0-human-k";
+      kEl.textContent = k;
+
+      const vEl = document.createElement("span");
+      vEl.textContent = v;
+
+      row.appendChild(kEl);
+      row.appendChild(vEl);
+      human.insertBefore(row, acts);
+    }
+
+    function renderHumanError(err) {
+      // чистим строки
+      try {
+        const rows = human.querySelectorAll(".dbg0-human-row");
+        rows.forEach((n) => n.remove());
+      } catch {}
+
+      clearActs();
+
+      const sev = toStr(err?.severity) || "error";
+      const scope = toStr(err?.scope) || "ui";
+      const msg = toStr(err?.message) || "(no message)";
+      const hint = toStr(err?.hint) || "";
+
+      const loc = err && typeof err === "object" ? err.location : null;
+      const where =
+        loc && typeof loc === "object" && loc.file
+          ? `${toStr(loc.file)}:${toStr(loc.line)}:${toStr(loc.col)}`
+          : "";
+
+      const d = err && typeof err === "object" ? err.details : null;
+      const service = toStr(pick(d, "service", "")) || toStr(pick(err?.ctx, "service", ""));
+      const et = toStr(pick(d, "error_type", "")) || toStr(pick(err?.ctx, "error_type", ""));
+      const upstream =
+        toStr(pick(d, "upstream_base_url", "")) || toStr(pick(err?.ctx, "upstream_base_url", ""));
+      const upstreamUrl =
+        toStr(pick(d, "upstream_url", "")) || toStr(pick(err?.ctx, "upstream_url", ""));
+
+      humanTitle.textContent = msg;
+
+      addHumanRow("Источник:", `${scope} / ${sev}${service ? " / " + service : ""}`);
+      if (where) addHumanRow("Где:", where);
+      if (upstream) addHumanRow("Сервис:", upstream);
+      if (upstreamUrl) addHumanRow("URL:", upstreamUrl);
+      if (et) addHumanRow("Тип:", et);
+
+      const why = toStr(pick(d, "error", "")) || "";
+      if (why) addHumanRow("Почему:", why);
+
+      if (hint) addHumanRow("Что делать:", hint);
+
+      const action_list = toActionList(err);
+      if (action_list.length) {
+        for (const a of action_list) {
+          const ep = String(pick(a, "endpoint", "") || "").trim();
+          const typ = String(pick(a, "type", "") || "").trim();
+          const label = actionLabelRu(a);
+
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "dbg0-actbtn";
+          b.textContent = label;
+
+          // tooltip
+          const tip = ep
+            ? `Действие: ${label}
+Вызов: ${ep}`
+            : `Действие: ${label}`;
+          b.setAttribute("data-tip", tip);
+          bindTip(b);
+
+          b.addEventListener("click", async () => {
+            if (typ === "reload") {
+              try { location.reload(); } catch {}
+              return;
+            }
+            if (!ep) return;
+
+            const res = await runEndpoint(ep, "POST");
+            // запишем событие в Level0 (видно в bundle)
+            try {
+              pushEvent({
+                level: res.ok ? "info" : "error",
+                name: "ui.action",
+                payload: { action: typ || label, endpoint: ep, result: res },
+              });
+            } catch {}
+            // обновим отображение snapshot/kv/pre
+            try {
+              renderHumanError(state.lastFatal || err);
+            } catch {}
+          });
+
+          acts.appendChild(b);
+        }
+      }
     }
   }
 
@@ -542,6 +853,7 @@ export function initDebuggerLevel0() {
 
   function open() {
     ensureMounted();
+    try { renderErrorsList(); } catch {}
     overlay.style.display = "block";
     state.opened = true;
   }
@@ -556,7 +868,100 @@ export function initDebuggerLevel0() {
     else open();
   }
 
-  function showOverlayForError(err) {
+
+  function renderErrorsList() {
+    try {
+      if (!errorsBox) return;
+      errorsBox.textContent = "";
+
+      const items = Array.isArray(state.errors) ? state.errors.slice(-10).reverse() : [];
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.style.opacity = "0.85";
+        empty.style.fontSize = "12px";
+        empty.textContent = "Ошибок пока нет.";
+        errorsBox.appendChild(empty);
+        return;
+      }
+
+      const head = document.createElement("div");
+      head.style.fontWeight = "700";
+      head.style.marginTop = "2px";
+      head.textContent = "Последние ошибки";
+      errorsBox.appendChild(head);
+
+      for (const e of items) {
+        const wrap = document.createElement("div");
+        wrap.className = "dbg0-err";
+
+        const h = document.createElement("div");
+        h.className = "dbg0-err-head";
+
+        const pill1 = document.createElement("span");
+        pill1.className = "dbg0-pill";
+        pill1.textContent = String(e?.scope || "ui");
+        const pill2 = document.createElement("span");
+        pill2.className = "dbg0-pill";
+        pill2.textContent = String(e?.severity || "error");
+
+        const pill3 = document.createElement("span");
+        pill3.className = "dbg0-pill";
+        pill3.textContent = String(e?.ts || "");
+
+        const cnt = Number(e?.dedupe?.count || 0);
+        const pill4 = document.createElement("span");
+        pill4.className = "dbg0-pill";
+        pill4.textContent = cnt > 1 ? ("×" + String(cnt)) : "";
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "dbg0-copy-mini";
+        btn.textContent = "Copy";
+        btn.setAttribute("data-tip", "Скопировать эту ошибку (JSON) в буфер обмена.");
+        bindTip(btn);
+        btn.addEventListener("click", async () => {
+          try { await copyText(safeJson(e || {})); } catch {}
+        });
+
+        h.appendChild(pill1);
+        h.appendChild(pill2);
+        h.appendChild(pill3);
+        if (pill4.textContent) h.appendChild(pill4);
+        h.appendChild(btn);
+
+        const msg = document.createElement("div");
+        msg.className = "dbg0-err-msg";
+        msg.textContent = String(e?.message || e?.title || "—");
+
+        const loc = e?.location || {};
+        const file = String(loc?.file || "");
+        const line = loc?.line ? String(loc.line) : "";
+        const col = loc?.col ? String(loc.col) : "";
+        const where = file ? (file + (line ? ":" + line : "") + (col ? ":" + col : "")) : "—";
+
+        const w = document.createElement("div");
+        w.className = "dbg0-err-where";
+        w.innerHTML = "<b>Где:</b> <span class='dbg0-pill'></span>";
+        w.querySelector("span").textContent = where;
+
+        const causes = Array.isArray(e?.causes) ? e.causes : [];
+        const why = causes.length ? String(causes[0]?.message || "—") : "—";
+        const c = document.createElement("div");
+        c.className = "dbg0-err-why";
+        c.innerHTML = "<b>Почему:</b> <span></span>";
+        c.querySelector("span").textContent = why;
+
+        wrap.appendChild(h);
+        wrap.appendChild(msg);
+        wrap.appendChild(w);
+        wrap.appendChild(c);
+
+        errorsBox.appendChild(wrap);
+      }
+    } catch {}
+  }
+
+function showOverlayForError(err) {
     const sev = toStr(err?.severity);
     const sc = toStr(err?.scope);
 
@@ -568,11 +973,15 @@ export function initDebuggerLevel0() {
     ]);
 
     pre.textContent = safeJson(err);
-    open();
+      try { renderErrorsList(); } catch {}
+      open();
   }
 
   // UI handlers
   btnClose.addEventListener("click", () => close());
+  bindTip(btnCopy);
+  bindTip(btnCopyBundle);
+  bindTip(btnClose);
 
   btnCopy.addEventListener("click", async () => {
     const txt = safeJson(state.lastFatal || { empty: true });
@@ -601,6 +1010,98 @@ export function initDebuggerLevel0() {
   // ----------------------------
   // 6) Error traps (до React) — и навсегда (Level0 всегда активен)
   // ----------------------------
+    // ----------------------------
+    // DBG0_CONSOLE_HOOK: console.warn/error -> UiError (чтобы ловить dev-warn библиотек и сообщения консоли)
+    // ----------------------------
+    (function DBG0_CONSOLE_HOOK() {
+      try {
+        const origWarn = console.warn ? console.warn.bind(console) : null;
+        const origError = console.error ? console.error.bind(console) : null;
+
+        // защита от рекурсии (если внутри pushError кто-то пишет в console)
+        let inHook = false;
+
+        function fmt(args) {
+          try {
+            return (args || [])
+              .map((a) => {
+                if (a == null) return "";
+                if (typeof a === "string") return a;
+                if (a instanceof Error) return a.message || String(a);
+                try {
+                  return JSON.stringify(a);
+                } catch {
+                  return String(a);
+                }
+              })
+              .filter(Boolean)
+              .join(" ");
+          } catch {
+            return "";
+          }
+        }
+
+        function stackFromHere(tag) {
+          try {
+            throw new Error(tag || "console");
+          } catch (e) {
+            return toStr(e && typeof e === "object" ? e.stack : "");
+          }
+        }
+
+        if (origWarn) {
+          console.warn = (...args) => {
+            try {
+              if (!inHook) {
+                inHook = true;
+                const msg = fmt(args) || "console.warn";
+                const st = stackFromHere("console.warn");
+                pushError(new Error(msg), {
+                  scope: "ui",
+                  severity: "warn",
+                  title: "",
+                  message: msg,
+                  details: { kind: "console.warn", args, stack: st },
+                  ctx: { where: "console.warn" },
+                  actions: ["copy", "open"],
+                });
+              }
+            } catch {} finally {
+              inHook = false
+            }
+            try { origWarn(...args); } catch {}
+          };
+        }
+
+        if (origError) {
+          console.error = (...args) => {
+            try {
+              if (!inHook) {
+                inHook = true;
+                const msg = fmt(args) || "console.error";
+                const st = stackFromHere("console.error");
+                pushError(new Error(msg), {
+                  scope: "ui",
+                  severity: "error",
+                  title: "",
+                  message: msg,
+                  details: { kind: "console.error", args, stack: st },
+                  ctx: { where: "console.error" },
+                  actions: ["copy", "open"],
+                });
+              }
+            } catch {} finally {
+              inHook = false
+            }
+            try { origError(...args); } catch {}
+          };
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+
   window.addEventListener(
     "error",
     (ev) => {
@@ -660,6 +1161,25 @@ export function initDebuggerLevel0() {
   // ----------------------------
   // 7) Экспорт API Level 0
   // ----------------------------
+
+  function clearErrors() {
+    state.errors = [];
+    state.dropped.errors = 0;
+    state.lastFatal = null;
+    state.dedupe = new Map();
+    state.throttle = new Map();
+  }
+
+  function clearAll() {
+    clearErrors();
+    state.events = [];
+    state.network = [];
+    state.snapshots = [];
+    state.dropped.events = 0;
+    state.dropped.network = 0;
+    state.dropped.snapshots = 0;
+  }
+
   const api = {
     __inited: true,
 
@@ -671,6 +1191,8 @@ export function initDebuggerLevel0() {
     // source-of-truth APIs
     pushError,
     subscribeErrors,
+    clearErrors,
+    clearAll,
 
     pushEvent,
     subscribeEvents,

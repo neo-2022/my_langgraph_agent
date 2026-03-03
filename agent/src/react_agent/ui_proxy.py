@@ -7,6 +7,14 @@ UI Proxy API для React UI.
    - сохранить модель в .env
    - перезапуск tmux-сессии langgraph
    - probe tool_calls (проверка поддержки tool calling у моделей)
+
+Важно по Debugger:
+- Для "100% ошибок" нужны источники вне браузера:
+  - Vite/dev-server (tmux session ui)
+  - LangGraph (tmux session langgraph)
+  - UI Proxy (tmux session ui_proxy)
+  - и будущие сервисы (cloud models/tools/etc).
+- Поэтому ui_proxy даёт эндпоинты статуса и логов по tmux (чтобы ошибки сборки/процессов были видимы всегда).
 """
 
 from __future__ import annotations
@@ -15,7 +23,7 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -44,7 +52,6 @@ UI_PROXY_TMUX_CMD = os.environ.get(
     "UI_PROXY_TMUX_CMD",
     "cd ~/my_langgraph_agent/agent && source ../venv/bin/activate && UI_PROXY_PORT=8090 python -m uvicorn react_agent.ui_proxy:app --host 127.0.0.1 --port 8090",
 )
-
 
 # Кэш probe (чтобы не мучить большие модели постоянно)
 PROBE_CACHE_TTL_SECONDS = int(os.environ.get("PROBE_CACHE_TTL_SECONDS", "3600"))  # 1h
@@ -124,6 +131,54 @@ def _tmux_has_session(name: str) -> bool:
     return p.returncode == 0
 
 
+def _tmux_capture_pane(name: str, lines: int = 200) -> Dict[str, Any]:
+    """
+    Возвращает текст из tmux pane для сессии `name` (последние N строк).
+    Это нужно для "100% ошибок" (например, ошибки сборки Vite/Babel в tmux session ui).
+    """
+    if not _tmux_has_session(name):
+        return {"ok": False, "error": f"tmux-сессия {name} не найдена", "tmux_session": False}
+
+def _systemd_user_journal(unit: str, lines: int = 200) -> Dict[str, Any]:
+    """
+    Возвращает последние N строк логов systemd user unit через journalctl.
+    Нужно для "100% ошибок" для сервисов, которые не в tmux (например React UI как systemd service).
+    """
+    n = int(lines or 200)
+    n = max(20, min(2000, n))
+    try:
+        r = subprocess.run(
+            ["journalctl", "--user", "-u", unit, "-n", str(n), "--no-pager"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if r.returncode != 0:
+            return {"ok": False, "unit": unit, "lines": n, "error": (r.stderr.strip() or r.stdout.strip() or "journalctl failed"), "text": ""}
+        return {"ok": True, "unit": unit, "lines": n, "text": (r.stdout or "").rstrip("\n")}
+    except Exception as e:
+        return {"ok": False, "unit": unit, "lines": n, "error": str(e), "text": ""}
+
+
+    n = int(lines or 200)
+    n = max(20, min(2000, n))  # лимитируем, чтобы не тащить мегабайты
+
+    # capture-pane:
+    # -p: print
+    # -S -N: start line from -N (последние N)
+    try:
+        r = subprocess.run(
+            ["tmux", "capture-pane", "-t", name, "-p", "-S", f"-{n}"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        txt = (r.stdout or "").rstrip("\n")
+        return {"ok": True, "tmux_session": True, "lines": n, "text": txt}
+    except Exception as e:
+        return {"ok": False, "tmux_session": True, "error": str(e), "lines": n, "text": ""}
+
+
 def _http_health(url: str) -> Dict[str, Any]:
     try:
         r = httpx.get(url, timeout=2.0)
@@ -165,7 +220,6 @@ def _tmux_restart_langgraph() -> Dict[str, Any]:
     return {"ok": True}
 
 
-
 def _langgraph_health() -> Dict[str, Any]:
     """
     Пытаемся понять, жив ли LangGraph по HTTP.
@@ -196,6 +250,100 @@ def _tmux_start_langgraph() -> Dict[str, Any]:
         return {"ok": True, "created": True}
     subprocess.run(["tmux", "send-keys", "-t", "langgraph", LANGGRAPH_TMUX_CMD, "Enter"], check=False)
     return {"ok": True, "created": False}
+
+
+# ---------- /api proxy ----------
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def proxy_api(path: str, request: Request) -> Response:
+    # Проксируем /api/* в LangGraph API.
+    # Важно для "100% ошибок": если LangGraph недоступен, возвращаем структурированную JSON-ошибку
+    # (service/upstream/hint), чтобы UI Debugger показал человеку понятную причину и что делать.
+    url = LANGGRAPH_BASE_URL.rstrip("/") + "/" + path
+    method = request.method
+    headers = dict(request.headers)
+    headers.pop("host", None)
+
+    body = await request.body()
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.request(
+                method,
+                url,
+                headers=headers,
+                content=body,
+                params=dict(request.query_params),
+            )
+            return Response(
+                content=r.content,
+                status_code=r.status_code,
+                headers=dict(r.headers),
+                media_type=r.headers.get("content-type"),
+            )
+    except (httpx.ConnectError, httpx.NetworkError) as e:
+        # LangGraph не отвечает / connection refused / network issue
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_type": "upstream_connect",
+                "service": "langgraph",
+                "upstream_base_url": LANGGRAPH_BASE_URL,
+                "upstream_url": url,
+                "method": method,
+                "error": str(e),
+                "hint_ru": "LangGraph недоступен. Запусти LangGraph (run.sh) или включи его в панели «Сервисы» (LangGraph).",
+                "actions": [
+                    {"type": "restart_langgraph", "endpoint": "/ui/restart-langgraph"},
+                    {"type": "langgraph_start", "endpoint": "/ui/langgraph/start"},
+                ],
+            },
+            status_code=502,
+        )
+    except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.TimeoutException) as e:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_type": "upstream_timeout",
+                "service": "langgraph",
+                "upstream_base_url": LANGGRAPH_BASE_URL,
+                "upstream_url": url,
+                "method": method,
+                "error": str(e),
+                "hint_ru": "Таймаут при обращении к LangGraph. Проверь, что LangGraph запущен и не завис, затем попробуй ещё раз.",
+                "actions": [
+                    {"type": "restart_langgraph", "endpoint": "/ui/restart-langgraph"},
+                ],
+            },
+            status_code=504,
+        )
+    except httpx.RequestError as e:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error_type": "upstream_request_error",
+                "service": "langgraph",
+                "upstream_base_url": LANGGRAPH_BASE_URL,
+                "upstream_url": url,
+                "method": method,
+                "error": str(e),
+                "hint_ru": "Ошибка запроса к LangGraph через UI Proxy. Проверь доступность LangGraph и повтори.",
+            },
+            status_code=502,
+        )
+
+
+    body = await request.body()
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        r = await client.request(method, url, headers=headers, content=body, params=dict(request.query_params))
+        return Response(
+            content=r.content,
+            status_code=r.status_code,
+            headers=dict(r.headers),
+            media_type=r.headers.get("content-type"),
+        )
+
 
 # ---------- /ui endpoints ----------
 
@@ -265,38 +413,100 @@ def ui_langgraph_start() -> Dict[str, Any]:
 
 @app.get("/ui/ui-proxy/status")
 def ui_ui_proxy_status() -> Dict[str, Any]:
-    return {
+    # ui_proxy теперь управляется user systemd-сервисом
+    svc = "my_langgraph_ui_proxy.service"
+    active = False
+    enabled = False
+    err = ""
+    try:
+        r = subprocess.run(["systemctl", "--user", "is-active", svc], text=True, capture_output=True)
+        active = (r.returncode == 0) and (r.stdout.strip() == "active")
+        r2 = subprocess.run(["systemctl", "--user", "is-enabled", svc], text=True, capture_output=True)
+        enabled = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
+    except Exception as e:
+        err = str(e)
+
+    out = {
         "ok": True,
-        "tmux_session": _tmux_has_session("ui_proxy"),
+        "systemd_user_service": {"name": svc, "active": active, "enabled": enabled},
         "health": _http_health(f"http://{PROXY_HOST}:{PROXY_PORT}/health"),
         "base_url": f"http://{PROXY_HOST}:{PROXY_PORT}",
     }
+    if err:
+        out["systemd_user_service"]["error"] = err
+    return out
 
 
 @app.post("/ui/ui-proxy/start")
 def ui_ui_proxy_start() -> Dict[str, Any]:
-    # стартуем ui_proxy в tmux (вызов может быть из внешнего процесса, не из текущего ui_proxy)
-    return _tmux_start_session("ui_proxy", UI_PROXY_TMUX_CMD)
+    svc = "my_langgraph_ui_proxy.service"
+    try:
+        r = subprocess.run(["systemctl", "--user", "start", svc], text=True, capture_output=True)
+        if r.returncode != 0:
+            return {"ok": False, "error": (r.stderr.strip() or r.stdout.strip() or "start failed")}
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@app.post("/ui/ui-proxy/restart")
+def ui_ui_proxy_restart() -> Dict[str, Any]:
+    # Ответить до рестарта: делаем restart через задержку
+    svc = "my_langgraph_ui_proxy.service"
+    subprocess.Popen(
+        ["bash", "-lc", f"sleep 0.2; systemctl --user restart {svc}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return {"ok": True}
 
 
 @app.post("/ui/ui-proxy/stop")
 def ui_ui_proxy_stop() -> Dict[str, Any]:
-    # Пытаемся ответить до остановки: делаем stop через shell с небольшой задержкой
-    subprocess.Popen(["bash", "-lc", "sleep 0.2; tmux send-keys -t ui_proxy C-c"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Ответить до остановки: делаем stop через задержку
+    svc = "my_langgraph_ui_proxy.service"
+    subprocess.Popen(
+        ["bash", "-lc", f"sleep 0.2; systemctl --user stop {svc}"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
     return {"ok": True}
 
 
 @app.get("/ui/react-ui/status")
 def ui_react_ui_status() -> Dict[str, Any]:
-    return {
+    svc = "my_langgraph_react_ui.service"
+    active = False
+    enabled = False
+    err = ""
+    try:
+        r = subprocess.run(["systemctl", "--user", "is-active", svc], text=True, capture_output=True)
+        active = (r.returncode == 0) and (r.stdout.strip() == "active")
+        r2 = subprocess.run(["systemctl", "--user", "is-enabled", svc], text=True, capture_output=True)
+        enabled = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
+    except Exception as e:
+        err = str(e)
+
+    out = {
         "ok": True,
-        "tmux_session": _tmux_has_session("ui"),
-        "health": _http_health("http://127.0.0.1:5174/"),
-        "base_url": "http://127.0.0.1:5174",
+        "systemd_user_service": {"name": svc, "active": active, "enabled": enabled},
+        "health": _http_health("http://127.0.0.1:5175/"),
+        "base_url": "http://127.0.0.1:5175",
     }
+    if err:
+        out["systemd_user_service"]["error"] = err
+    return out
 
 
 
+
+@app.get("/ui/react-ui/logs")
+def ui_react_ui_logs(lines: int = 200) -> Dict[str, Any]:
+    """
+    Логи React UI (systemd user service: my_langgraph_react_ui.service).
+    Нужны, чтобы видеть ошибки сборки Vite/Babel и падения dev-сервера даже когда UI не загрузился.
+    """
+    return _systemd_user_journal("my_langgraph_react_ui.service", lines=lines)
 
 
 
@@ -330,80 +540,9 @@ def ui_probe_all_tool_calls(payload: Dict[str, Any]) -> Dict[str, Any]:
     payload: { "max_models": 6 }
     """
     max_models = int(payload.get("max_models", 6) or 6)
-    if max_models < 1:
-        max_models = 1
-    if max_models > 24:
-        max_models = 24  # safety
+    max_models = max(1, min(40, max_models))
 
     res = probe_all_models_tool_calls.invoke({"max_models": max_models})
-    return dict(res)
-
-
-# ---------- /api proxy to LangGraph ----------
-
-async def _proxy(request: Request, path: str) -> Response:
-    url = f"{LANGGRAPH_BASE_URL}/{path}"
-
-    hop_by_hop = {
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "te",
-        "trailers",
-        "transfer-encoding",
-        "upgrade",
-        "host",
-    }
-
-    headers: Dict[str, str] = {}
-    for k, v in request.headers.items():
-        if k.lower() in hop_by_hop:
-            continue
-        headers[k] = v
-
-    body = await request.body()
-    params = dict(request.query_params)
-
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.request(
-            method=request.method,
-            url=url,
-            params=params,
-            content=body if body else None,
-            headers=headers,
-        )
-
-    return Response(
-        content=resp.content,
-        status_code=resp.status_code,
-        headers={
-            k: v
-            for k, v in resp.headers.items()
-            if k.lower() not in {"content-encoding", "transfer-encoding", "connection"}
-        },
-        media_type=resp.headers.get("content-type"),
-    )
-
-
-@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-async def api_proxy(path: str, request: Request) -> Response:
-    try:
-        return await _proxy(request, path)
-    except httpx.ConnectError:
-        return JSONResponse(
-            {"error": "LangGraph API недоступен", "base_url": LANGGRAPH_BASE_URL},
-            status_code=502,
-        )
-    except Exception as e:
-        return JSONResponse({"error": "Proxy error", "detail": str(e)}, status_code=500)
-
-
-def main() -> None:
-    import uvicorn
-    uvicorn.run(app, host=PROXY_HOST, port=PROXY_PORT)
-
-
-if __name__ == "__main__":
-    main()
+    out = dict(res)
+    out["max_models"] = max_models
+    return out

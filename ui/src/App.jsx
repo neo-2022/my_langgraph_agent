@@ -6,6 +6,86 @@ import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
 import { getUiErrorCore } from "./debugger/core.js";
 
+
+  // ----------------------------
+  // DBG0 шлюз: любое UI-событие/ошибка -> Level 0 (source of truth)
+  // ----------------------------
+  function _dbgStr(v) {
+    try {
+      if (v == null) return "";
+      return typeof v === "string" ? v : String(v);
+    } catch {
+      return "";
+    }
+  }
+
+  function _dbgPick(obj, key) {
+    try {
+      return obj && typeof obj === "object" ? obj[key] : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function _dbgMsgFrom(e) {
+    try {
+      const dbg = e && typeof e === "object" ? e.__dbg : null;
+      const hint = dbg && typeof dbg === "object" ? _dbgStr(dbg.hint_ru || "") : "";
+      if (hint) return hint;
+    } catch {}
+    return _dbgStr(e?.message || e);
+  }
+
+  function _dbgDetailsFrom(e, extra) {
+    const out = {};
+    try {
+      const dbg = e && typeof e === "object" ? e.__dbg : null;
+      const http = e && typeof e === "object" ? e.__http : null;
+      const raw = e && typeof e === "object" ? e.__raw : null;
+
+      if (dbg && typeof dbg === "object") out.upstream = { ...dbg };
+      if (http && typeof http === "object") out.http = { ...http };
+      if (raw != null) out.raw = raw;
+
+      if (extra && typeof extra === "object") {
+        for (const k of Object.keys(extra)) out[k] = extra[k];
+      }
+    } catch {}
+    return out;
+  }
+
+  function captureUi(e, meta = {}) {
+    // meta: { source, severity, where, hint, actions, extra_details }
+    const msg = _dbgMsgFrom(e);
+    try {
+      const src = _dbgStr(meta.source || "ui");
+      const sev = _dbgStr(meta.severity || "error");
+      const where = _dbgStr(meta.where || "ui");
+      const hint = _dbgStr(meta.hint || "");
+
+      const dbg = e && typeof e === "object" ? e.__dbg : null;
+      const actions = Array.isArray(meta.actions) ? meta.actions : undefined;
+
+      uiErrCore.push(e, {
+        source: src,
+        severity: sev,
+        message: msg,
+        hint: hint || (dbg && typeof dbg === "object" ? _dbgStr(dbg.hint_ru || "") : ""),
+        details: _dbgDetailsFrom(e, meta.extra_details),
+        actions,
+        context: {
+          where,
+          ...(dbg && typeof dbg === "object" && dbg.service ? { service: _dbgStr(dbg.service) } : {}),
+          ...(dbg && typeof dbg === "object" && dbg.error_type ? { error_type: _dbgStr(dbg.error_type) } : {}),
+          ...(dbg && typeof dbg === "object" && dbg.upstream_base_url ? { upstream_base_url: _dbgStr(dbg.upstream_base_url) } : {}),
+          ...(dbg && typeof dbg === "object" && dbg.upstream_url ? { upstream_url: _dbgStr(dbg.upstream_url) } : {}),
+          ...(dbg && typeof dbg === "object" && dbg.method ? { method: _dbgStr(dbg.method) } : {}),
+          ...(dbg && typeof dbg === "object" && dbg.status_code != null ? { status_code: dbg.status_code } : {}),
+        },
+      });
+    } catch {}
+    return msg;
+  }
 function TabButton({ active, onClick, children }) {
   const en = String(children ?? "").trim();
   const map = {
@@ -284,11 +364,135 @@ function RailButton({ active, onClick, children, tip }) {
   );
 }
 
+
+/**
+ * TipBtn:
+ * - Кнопка secondary-btn с кастомным tooltip (как в проекте)
+ * - НЕ используем title (нативный tooltip браузера)
+ * - Tooltip порталом, чтобы не обрезался
+ * - Поддержка многострочного текста (\n) через whiteSpace: "pre-line"
+ */
+function TipBtn({ label, tip, onClick, children, disabled, style }) {
+  const btnRef = useRef(null);
+  const tipRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0, dir: "down" });
+
+  const computePos = useCallback(() => {
+    const b = btnRef.current;
+    if (!b) return;
+    const r = b.getBoundingClientRect();
+    setPos({ left: r.left + r.width / 2, top: r.bottom + 10, dir: "down" });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    computePos();
+    const onReflow = () => computePos();
+    window.addEventListener("scroll", onReflow, true);
+    window.addEventListener("resize", onReflow);
+    return () => {
+      window.removeEventListener("scroll", onReflow, true);
+      window.removeEventListener("resize", onReflow);
+    };
+  }, [open, computePos]);
+
+  useEffect(() => {
+    if (!open) return;
+    const b = btnRef.current;
+    const tEl = tipRef.current;
+    if (!b || !tEl) return;
+
+    const r = b.getBoundingClientRect();
+    const tr = tEl.getBoundingClientRect();
+    const margin = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    const spaceBelow = vh - r.bottom - margin;
+    const spaceAbove = r.top - margin;
+
+    const wantUp = spaceAbove >= tr.height + margin && spaceAbove > spaceBelow;
+    let top = wantUp ? r.top - tr.height - margin : r.bottom + margin;
+
+    top = Math.max(margin, Math.min(vh - tr.height - margin, top));
+
+    let left = r.left + r.width / 2;
+    const halfW = tr.width / 2;
+    left = Math.max(margin + halfW, Math.min(vw - margin - halfW, left));
+
+    setPos({ left, top, dir: wantUp ? "up" : "down" });
+  }, [open]);
+
+  const tooltip =
+    open && tip
+      ? createPortal(
+          <div
+            ref={tipRef}
+            style={{
+              position: "fixed",
+              left: pos.left,
+              top: pos.top,
+              transform: "translateX(-50%)",
+              zIndex: 10050,
+              padding: "6px 10px",
+              borderRadius: 10,
+              fontSize: 12,
+              lineHeight: 1.25,
+              color: "rgba(255,255,255,0.92)",
+              background: "rgba(0,0,0,0.82)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+              maxWidth: 360,
+              whiteSpace: "pre-line",
+              pointerEvents: "none",
+            }}
+          >
+            {tip}
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        className="secondary-btn"
+        aria-label={label || tip || ""}
+        onClick={onClick}
+        disabled={disabled}
+        style={style}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        {children}
+      </button>
+      {tooltip}
+    </>
+  );
+}
+
+
 async function getJson(path) {
   const r = await fetch(path);
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`HTTP ${r.status}: ${txt || "ошибка"}`);
+    let payload = null;
+    try {
+      payload = txt ? JSON.parse(txt) : null;
+    } catch {}
+    const hint = payload && typeof payload === "object" ? String(payload.hint_ru || "") : "";
+    const msg = hint || `HTTP ${r.status}: ${txt || "ошибка"}`;
+    const err = new Error(msg);
+    // Важно: отдаём структурированную инфу Debugger-у (без хардкода, только что реально пришло)
+    err.__dbg = payload && typeof payload === "object" ? payload : null;
+    err.__http = { status: r.status, method: "GET", path: String(path || "") };
+    err.__raw = txt;
+    throw err;
   }
   return await r.json();
 }
@@ -301,7 +505,17 @@ async function postJson(path, body) {
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => "");
-    throw new Error(`HTTP ${r.status}: ${txt || "ошибка"}`);
+    let payload = null;
+    try {
+      payload = txt ? JSON.parse(txt) : null;
+    } catch {}
+    const hint = payload && typeof payload === "object" ? String(payload.hint_ru || "") : "";
+    const msg = hint || `HTTP ${r.status}: ${txt || "ошибка"}`;
+    const err = new Error(msg);
+    err.__dbg = payload && typeof payload === "object" ? payload : null;
+    err.__http = { status: r.status, method: "POST", path: String(path || "") };
+    err.__raw = txt;
+    throw err;
   }
   return await r.json();
 }
@@ -558,6 +772,8 @@ export default function App() {
   const [dbg0Snap, setDbg0Snap] = useState(null);
   const [dbgCopyOk, setDbgCopyOk] = useState(false);
   const [dbgRefreshOk, setDbgRefreshOk] = useState(false);
+    const [dbgBundleOk, setDbgBundleOk] = useState(false);
+    const [dbgClearOk, setDbgClearOk] = useState(false);
 
   const refreshDbg0Snap = useCallback(() => {
     try {
@@ -704,7 +920,8 @@ export default function App() {
       };
     } catch (e) {
       setToolCallsProbeError(String(e?.message || e));
-      return null;
+              try { captureUi(e, { source: "models", severity: "error", where: "catch:toolcalls_probe", extra_details: { target: "setToolCallsProbeError" } }); } catch {}
+return null;
     }
   };
 
@@ -818,7 +1035,8 @@ export default function App() {
       setAssistantId("");
       setAssistantName("");
       setAssistantErr(String(e?.message || e));
-    } finally {
+            try { captureUi(e, { source: "assistant", severity: "error", where: "catch:assistants", extra_details: { target: "setAssistantErr" } }); } catch {}
+} finally {
       setAssistantLoading(false);
     }
   }, []);
@@ -832,7 +1050,8 @@ export default function App() {
     } catch (e) {
       setApiStatus("ошибка");
       setApiError(String(e?.message || e));
-    }
+            try { captureUi(e, { source: "api", severity: "error", where: "catch:api", extra_details: { target: "setApiError" } }); } catch {}
+}
   };
 
   const loadModels = async () => {
@@ -848,7 +1067,8 @@ export default function App() {
       setDefaultModel(String(data.default || ""));
     } catch (e) {
       setSaveError(String(e?.message || e));
-    } finally {
+            try { captureUi(e, { source: "ui", severity: "error", where: "catch:save", extra_details: { target: "setSaveError" } }); } catch {}
+} finally {
       setModelsLoading(false);
     }
   };
@@ -869,7 +1089,8 @@ export default function App() {
       );
     } catch (e) {
       setSaveError(String(e?.message || e));
-    }
+            try { captureUi(e, { source: "ui", severity: "error", where: "catch:save", extra_details: { target: "setSaveError" } }); } catch {}
+}
   };
 
   const restartLanggraph = async () => {
@@ -881,7 +1102,8 @@ export default function App() {
       setSaveInfo("LangGraph перезапущен. Обнови страницу.");
     } catch (e) {
       setSaveError(String(e?.message || e));
-    }
+            try { captureUi(e, { source: "ui", severity: "error", where: "catch:save", extra_details: { target: "setSaveError" } }); } catch {}
+}
   };
 
 
@@ -898,7 +1120,8 @@ export default function App() {
       return s;
     } catch (e) {
       setLgError(String(e?.message || e));
-      setLgStatus(null);
+              try { captureUi(e, { source: "api", severity: "error", where: "catch:langgraph_status", extra_details: { target: "setLgError" } }); } catch {}
+setLgStatus(null);
       return null;
     }
   }, []);
@@ -927,7 +1150,8 @@ export default function App() {
       await pollLanggraphUntil(false);
     } catch (e) {
       setLgError(String(e?.message || e));
-    } finally {
+            try { captureUi(e, { source: "api", severity: "error", where: "catch:langgraph_status", extra_details: { target: "setLgError" } }); } catch {}
+} finally {
       setLgBusy(false);
     }
   }, [pollLanggraphUntil]);
@@ -941,7 +1165,8 @@ export default function App() {
       await pollLanggraphUntil(true);
     } catch (e) {
       setLgError(String(e?.message || e));
-    } finally {
+            try { captureUi(e, { source: "api", severity: "error", where: "catch:langgraph_status", extra_details: { target: "setLgError" } }); } catch {}
+} finally {
       setLgBusy(false);
     }
   }, [pollLanggraphUntil]);
@@ -977,7 +1202,8 @@ export default function App() {
       return s;
     } catch (e) {
       setUiProxyError(String(e?.message || e));
-      setUiProxyStatus(null);
+              try { captureUi(e, { source: "ui_proxy", severity: "error", where: "catch:ui_proxy_status", extra_details: { target: "setUiProxyError" } }); } catch {}
+setUiProxyStatus(null);
       return null;
     }
   }, []);
@@ -994,13 +1220,69 @@ export default function App() {
       return s;
     } catch (e) {
       setReactUiError(String(e?.message || e));
-      setReactUiStatus(null);
+              try { captureUi(e, { source: "ui", severity: "error", where: "catch:react_ui_status", extra_details: { target: "setReactUiError" } }); } catch {}
+setReactUiStatus(null);
       return null;
     }
   }, []);
 
 
-  // Авто-обновление статусов UI Proxy + React UI, пока открыт "Общее"
+
+    // ----------------------------
+    // DBG0_SERVICE_STATUS_MIRROR:
+    // Любая деградация сервисов, которую UI показывает как "красное состояние",
+    // должна фиксироваться в Level 0 как UiError (source-of-truth).
+    // ----------------------------
+    useEffect(() => {
+      try {
+        if (lgStatus && typeof lgStatus === "object") {
+          const ok = !!(lgStatus.health && lgStatus.health.ok);
+          if (!ok) {
+            const base = String(lgStatus.base_url || "");
+            captureUi(new Error(base ? `LangGraph недоступен (${base}).` : "LangGraph недоступен."), {
+              source: "api",
+              severity: "error",
+              where: "service:langgraph",
+              hint: "Открой панель «Сервисы» и включи LangGraph.",
+              extra_details: { kind: "service_status", service: "langgraph", status: lgStatus },
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        if (uiProxyStatus && typeof uiProxyStatus === "object") {
+          const ok = !!(uiProxyStatus.health && uiProxyStatus.health.ok);
+          if (!ok) {
+            const base = String(uiProxyStatus.base_url || "");
+            captureUi(new Error(base ? `UI Proxy недоступен (${base}).` : "UI Proxy недоступен."), {
+              source: "ui_proxy",
+              severity: "error",
+              where: "service:ui_proxy",
+              hint: "Проверь, что UI Proxy запущен (systemd user service) и порт доступен.",
+              extra_details: { kind: "service_status", service: "ui_proxy", status: uiProxyStatus },
+            });
+          }
+        }
+      } catch {}
+
+      try {
+        if (reactUiStatus && typeof reactUiStatus === "object") {
+          const ok = !!(reactUiStatus.health && reactUiStatus.health.ok);
+          if (!ok) {
+            const base = String(reactUiStatus.base_url || "");
+            captureUi(new Error(base ? `React UI недоступен (${base}).` : "React UI недоступен."), {
+              source: "ui",
+              severity: "error",
+              where: "service:react_ui",
+              hint: "Проверь, что dev-сервер Vite запущен и порт доступен.",
+              extra_details: { kind: "service_status", service: "react_ui", status: reactUiStatus },
+            });
+          }
+        }
+      } catch {}
+    }, [lgStatus, uiProxyStatus, reactUiStatus]);
+// Авто-обновление статусов UI Proxy + React UI, пока открыт "Общее"
   useEffect(() => {
     if (!openPanels.includes("general")) return;
 
@@ -1131,14 +1413,41 @@ export default function App() {
           });
         } catch {}
       } else {
-        const msg = String(e?.message || e);
+        // Если ui_proxy вернул структурированную ошибку — прокидываем её целиком в Level 0
+        const dbg = e && typeof e === "object" ? e.__dbg : null;
+
+        const msg = dbg?.hint_ru
+          ? String(dbg.hint_ru)
+          : String(e?.message || e);
+
         setRunStreamError(msg);
+
         try {
+          const ctx = {
+            where: "runStream",
+            ...(dbg?.service ? { service: String(dbg.service) } : {}),
+            ...(dbg?.error_type ? { error_type: String(dbg.error_type) } : {}),
+            ...(dbg?.upstream_base_url ? { upstream_base_url: String(dbg.upstream_base_url) } : {}),
+            ...(dbg?.upstream_url ? { upstream_url: String(dbg.upstream_url) } : {}),
+            ...(dbg?.method ? { method: String(dbg.method) } : {}),
+            ...(dbg?.status_code ? { status_code: Number(dbg.status_code) } : {}),
+          };
+
+          // actions из ui_proxy могут быть объектами {type, endpoint}; в UiError держим простые строки
+          const actions = Array.isArray(dbg?.actions)
+            ? dbg.actions
+                .map((a) => (a && typeof a === "object" ? String(a.type || "") : String(a)))
+                .filter(Boolean)
+            : undefined;
+
           uiErrCore.push(e, {
             source: "run",
             severity: "error",
             message: msg,
-            context: { where: "runStream" },
+            hint: dbg?.hint_ru ? String(dbg.hint_ru) : "",
+            details: dbg ? { ...dbg } : undefined,
+            actions,
+            context: ctx,
           });
         } catch {}
       }
@@ -1194,7 +1503,7 @@ export default function App() {
       {openPanels.map((id) => {
         if (id === "general") {
           return (
-            <PanelShell key={id} title="Общее" onClose={() => closePanel(id)}>
+            <PanelShell key={id} onClose={() => closePanel(id)}>
               <div className="sidebar__section">
                 <div className="sidebar__section-title">Сервисы</div>
 
@@ -1346,7 +1655,6 @@ export default function App() {
           return (
             <PanelShell
               key={id}
-              title="Локальные модели (Ollama)"
               onClose={() => closePanel(id)}
             >
               <div className="sidebar__section">
@@ -1513,7 +1821,7 @@ export default function App() {
 
         if (id === "journal") {
           return (
-            <PanelShell key={id} title="Журнал" onClose={() => closePanel(id)}>
+            <PanelShell key={id} onClose={() => closePanel(id)}>
               <div className="sidebar__section">
                 <div className="sidebar__section-title">Execution Journal</div>
 
@@ -1585,7 +1893,7 @@ export default function App() {
 
         if (id === "tools") {
           return (
-            <PanelShell key={id} title="Инструменты" onClose={() => closePanel(id)}>
+            <PanelShell key={id} onClose={() => closePanel(id)}>
               <div className="sidebar__section">
                 <div className="sidebar__section-title">План</div>
                 <div className="hint">Здесь позже будут реальные tools (fs/shell/web).</div>
@@ -1598,7 +1906,6 @@ export default function App() {
           return (
             <PanelShell
               key={id}
-              title="Облачные модели"
               onClose={() => closePanel(id)}
             >
               <div className="sidebar__section">
@@ -1615,7 +1922,7 @@ export default function App() {
         return null;
       })}
       {debugOpen ? (
-        <PanelShell key="debugger" title="Debugger" onClose={() => setDebugOpen(false)}>
+        <PanelShell key="debugger" onClose={() => setDebugOpen(false)}>
           <div className="sidebar__section">
             <div className="sidebar__section-title">Отладчик</div>
             <div className="hint">
@@ -1626,61 +1933,205 @@ export default function App() {
           </div>
 
           <div className="sidebar__section">
-            <div className="sidebar__section-title">Bootstrap (Level 0)</div>
-            <div className="hint">Аварийный слой до React: что произошло, если UI падал на старте.</div>
+              <div className="sidebar__section-title">Bootstrap (Level 0)</div>
+              <div className="hint">Аварийный слой до React: что произошло, если UI падал на старте.</div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={() => {
-                  refreshDbg0Snap();
-                  setDbgRefreshOk(true);
-                  window.setTimeout(() => setDbgRefreshOk(false), 700);
-                }}
-                style={dbgRefreshOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
-              >
-                {dbgRefreshOk ? "Refreshed" : "Refresh"}
-              </button>
-              <button
-                type="button"
-                className="secondary-btn"
-                onClick={async () => {
-                  try {
-                    const txt = JSON.stringify(dbg0Snap ?? { empty: true }, null, 2);
-                    await navigator.clipboard.writeText(txt);
-                    setDbgCopyOk(true);
-                    window.setTimeout(() => setDbgCopyOk(false), 900);
-                  } catch {}
-                }}
-                style={dbgCopyOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
-              >
-                {dbgCopyOk ? "Copied!" : "Copy L0"}
-              </button>
-            </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", position: "relative", zIndex: 1, paddingBottom: 8 }}>
+                <TipBtn
+                  label="Обновить snapshot Level 0"
+                  tip={"Обновить snapshot Level 0\n(сборщик ошибок/событий)\nдля отображения в панели."}
+                  onClick={() => {
+                    refreshDbg0Snap();
+                    setDbgRefreshOk(true);
+                    window.setTimeout(() => setDbgRefreshOk(false), 700);
+                  }}
+                  style={
+                    dbgRefreshOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined
+                  }
+                >
+                  {dbgRefreshOk ? "Refreshed" : "Refresh"}
+                </TipBtn>
 
-            <div style={{ marginTop: 10 }}>
-              {!dbg0Snap ? (
-                <div className="hint">Level 0 snapshot: нет данных (или ещё не было ошибок).</div>
-              ) : (
-                <div>
-                  <div className="hint">
-                    Events: <b>{Array.isArray(dbg0Snap?.events) ? dbg0Snap.events.length : 0}</b>
+                <TipBtn
+                  label="Скопировать snapshot Level 0"
+                  tip={"Скопировать текущий snapshot Level 0\n(как есть) в буфер обмена."}
+                  onClick={async () => {
+                    try {
+                      const txt = JSON.stringify(dbg0Snap ?? { empty: true }, null, 2);
+                      await navigator.clipboard.writeText(txt);
+                      setDbgCopyOk(true);
+                      window.setTimeout(() => setDbgCopyOk(false), 900);
+                    } catch {}
+                  }}
+                  style={dbgCopyOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
+                >
+                  {dbgCopyOk ? "Copied!" : "Copy L0"}
+                </TipBtn>
+
+                <TipBtn
+                  label="Скопировать Debug Bundle"
+                  tip={"Скопировать Debug Bundle из Level 0:\nпоследние ошибки/события/сеть/снапшоты."}
+                  onClick={async () => {
+                    try {
+                      const snap = window.__DBG0__?.snapshot?.({
+                        errors: 50,
+                        events: 50,
+                        network: 50,
+                        snapshots: 50,
+                      });
+                      const txt = JSON.stringify(snap ?? { empty: true }, null, 2);
+                      await navigator.clipboard.writeText(txt);
+                      setDbgBundleOk(true);
+                      window.setTimeout(() => setDbgBundleOk(false), 900);
+                    } catch {}
+                  }}
+                  style={dbgBundleOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
+                >
+                  {dbgBundleOk ? "Copied!" : "Copy bundle"}
+                </TipBtn>
+
+                <TipBtn
+                  label="Очистить ошибки Level 0"
+                  tip={"Очистить только ошибки Level 0.\nСборщик продолжит работать."}
+                  onClick={() => {
+                    try {
+                      window.__DBG0__?.clearErrors?.();
+                    } catch {}
+                    refreshDbg0Snap();
+                    setDbgClearOk(true);
+                    window.setTimeout(() => setDbgClearOk(false), 700);
+                  }}
+                  style={dbgClearOk ? { boxShadow: "0 0 0 2px rgba(255,255,255,0.25)" } : undefined}
+                >
+                  {dbgClearOk ? "Cleared" : "Clear errors"}
+                </TipBtn>
+
+              </div>
+
+              <div style={{ marginTop: 10 }}>
+                {!dbg0Snap ? (
+                  <div className="hint">Level 0 snapshot: нет данных (или ещё не было ошибок).</div>
+                ) : (
+                  <div>
+                    <div className="hint">
+                      Events: <b>{Array.isArray(dbg0Snap?.events) ? dbg0Snap.events.length : 0}</b>
+                    </div>
+                    <div className="hint">
+                      Errors: <b>{Array.isArray(dbg0Snap?.errors) ? dbg0Snap.errors.length : 0}</b>
+                    </div>
+                    <div className="hint">
+                      Last error: <b>{dbg0Snap?.lastError?.message || "—"}</b>
+                    </div>
+                    <div className="hint">
+                      Kind: <b>{dbg0Snap?.lastError?.kind || "—"}</b>
+                    </div>
+                    <pre style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
+                      {JSON.stringify(dbg0Snap?.lastError || {}, null, 2)}
+                    </pre>
+
+                      <div className="sidebar__section" style={{ marginTop: 14 }}>
+                        <div className="sidebar__section-title">Errors (Level 0)</div>
+                        <div className="hint">
+                          Последние ошибки, пойманные сборщиком Level 0. Формат: что случилось → где → почему.
+                        </div>
+
+                        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                          {Array.isArray(dbg0Snap?.errors) && dbg0Snap.errors.length ? (
+                            dbg0Snap.errors
+                              .slice(-10)
+                              .reverse()
+                              .map((e) => {
+                                const loc = e?.location || {};
+                                const file = String(loc?.file || "");
+                                const line = loc?.line ? String(loc.line) : "";
+                                const col = loc?.col ? String(loc.col) : "";
+                                const where = file
+                                  ? `${file}${line ? ":" + line : ""}${col ? ":" + col : ""}`
+                                  : "—";
+
+                                const causes = Array.isArray(e?.causes) ? e.causes : [];
+                                const why =
+                                  causes && causes.length
+                                    ? String(causes[0]?.message || "") || "—"
+                                    : "—";
+
+                                const cnt = e?.dedupe?.count ? Number(e.dedupe.count) : 0;
+
+                                return (
+                                  <div
+                                    key={String(e?.id || Math.random())}
+                                    style={{
+                                      border: "1px solid rgba(255,255,255,0.12)",
+                                      borderRadius: 14,
+                                      background: "rgba(0,0,0,0.10)",
+                                      padding: "10px 10px",
+                                      display: "grid",
+                                      gap: 6,
+                                    }}
+                                  >
+                                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                      <span className="mono" style={{ opacity: 0.85 }}>
+                                        {String(e?.scope || "ui")}
+                                      </span>
+                                      <span className="mono" style={{ opacity: 0.85 }}>
+                                        {String(e?.severity || "error")}
+                                      </span>
+                                      {cnt > 1 ? (
+                                        <span className="mono" style={{ marginLeft: "auto", opacity: 0.75 }}>
+                                          ×{cnt}
+                                        </span>
+                                      ) : (
+                                        <span style={{ marginLeft: "auto" }} />
+                                      )}
+                                      <TipBtn
+                                        label="Скопировать ошибку"
+                                        tip={"Скопировать эту ошибку целиком (JSON) в буфер обмена."}
+                                        onClick={async () => {
+                                          try {
+                                            await navigator.clipboard.writeText(JSON.stringify(e || {}, null, 2));
+                                          } catch {}
+                                        }}
+                                      >
+                                        Copy
+                                      </TipBtn>
+                                    </div>
+
+                                    <div style={{ fontWeight: 700 }}>
+                                      {String(e?.message || e?.title || "—")}
+                                    </div>
+
+                                    <div className="hint">
+                                      <b>Где:</b> <span className="mono">{where}</span>
+                                    </div>
+
+                                    <div className="hint">
+                                      <b>Почему:</b> {why}
+                                    </div>
+
+                                    {Array.isArray(e?.causes) && e.causes.length > 1 ? (
+                                      <details>
+                                        <summary className="hint" style={{ cursor: "pointer" }}>
+                                          Показать цепочку причин ({e.causes.length})
+                                        </summary>
+                                        <pre style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
+                                          {JSON.stringify(e.causes, null, 2)}
+                                        </pre>
+                                      </details>
+                                    ) : null}
+                                  </div>
+                                );
+                              })
+                          ) : (
+                            <div className="hint">Ошибок пока нет.</div>
+                          )}
+                        </div>
+                      </div>
+
                   </div>
-                  <div className="hint">
-                    Last error: <b>{dbg0Snap?.lastError?.message || "—"}</b>
-                  </div>
-                  <div className="hint">
-                    Kind: <b>{dbg0Snap?.lastError?.kind || "—"}</b>
-                  </div>
-                  <pre style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
-                    {JSON.stringify(dbg0Snap?.lastError || {}, null, 2)}
-                  </pre>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </PanelShell>
+          </PanelShell>
       ) : null}
 
     </div>

@@ -304,8 +304,8 @@
 
 ## 16) Эксплуатационная документация (обязательное завершение)
 
-63. [ ] README/ops: переменные окружения, метрики (в т.ч. dlq_size), алерты, лимиты, retry/timeout policy  
-64. [ ] Runbook: “DLQ не пуст”, “spool corrupted”, “attachment blocked”, “Art offline” + команды диагностики  
+63. [x] README/ops: переменные окружения, метрики (в т.ч. dlq_size), алерты, лимиты, retry/timeout policy  
+64. [x] Runbook: “DLQ не пуст”, “spool corrupted”, “attachment blocked”, “Art offline” + команды диагностики  
     **Проверка:** файлы существуют в `docs/ops/`.
 
 ---

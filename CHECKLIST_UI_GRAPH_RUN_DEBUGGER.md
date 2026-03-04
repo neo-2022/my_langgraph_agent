@@ -158,8 +158,8 @@
 - [ ] Клик по ноде → скроллить журнал к связанным событиям + highlight
 
 ### 1.4 Зум/панорама графа
-- [ ] Колесо мыши для zoom
-- [ ] Controls (+/-/fit) доступны в Graph-only и Split
+- [x] Колесо мыши для zoom (ReactFlow ScrollZoom, `ui/src/GraphView.jsx`).
+- [x] Controls (+/-/fit) доступны в Graph-only и Split (`<Controls />` внутри `GraphView`, используется и в SplitView, и в tab="graph`).
 
 ---
 

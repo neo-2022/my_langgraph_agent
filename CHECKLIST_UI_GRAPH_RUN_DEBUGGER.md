@@ -151,9 +151,9 @@
 - [x] Вспомогательные min-width (Run 360px, Graph 420px) добавлены в SplitView на панели и single mode.
 - [x] Split mode + tab режим сохраняются в `localStorage` (`splitview:mode`, `splitview:tab`, `splitview:left_pct`).
 
-### 1.3 Навигация Journal ↔ Graph (MVP)
-- [ ] Клик по событию в журнале → центрировать граф на соответствующей ноде/span
-- [ ] Клик по ноде → скроллить журнал к связанным событиям + highlight
+- ### 1.3 Навигация Journal ↔ Graph (MVP)
+- [x] Клик по событию в Journal вызывает `setFocusNodeId`, GraphView `applyFocus` центрирует ноду/span (ui/src/App.jsx + ui/src/GraphView.jsx).
+- [x] Клик по ноде вызывает `onNodeSelected`, App подсвечивает entry в журнале (ui/src/App.jsx) и scroll/active стиль показывает связь.
 
 ### 1.4 Зум/панорама графа
 - [x] Колесо мыши для zoom (ReactFlow ScrollZoom, `ui/src/GraphView.jsx`).
@@ -164,19 +164,13 @@
 ## 2) Execution Journal (критично)
 
 ### 2.1 Отдельно от messages
-- [ ] UI показывает:
-  - [ ] messages (как сейчас)
-  - [ ] отдельный “Execution Journal” (список событий / timeline)
+- [x] UI показывает messages и отдельный Execution Journal (`ui/src/App.jsx` рисует messages + journal drawer).
 
 ### 2.2 Минимальная JSON-схема события (контракт)
 События приходят **уже в порядке времени** (UI не сортирует).
 
-#### 2.2.1 Расширение контракта (оптимально, без хардкода)
-- [ ] Контракт расширяем до сквозного DebugEvent/trace (см. `ui/src/debugger/README.md`):
-  - [ ] `trace_id` (единая цепочка)
-  - [ ] `span_id` и `parent_span_id` (причинность)
-  - [ ] `node_id` (Jump на граф) — только если сервер может дать точную привязку
-  - [ ] `links`/`related_span_ids` (связанные операции)
+- #### 2.2.1 Расширение контракта (оптимально, без хардкода)
+- [x] `trace_id`, `span_id`, `parent_span_id`, `run_id`, `assistant_id`, `node_id`, `attrs`, `payload` уже записываются (`ui/src/debugger/level0.js` `pushEvent`).
 - [ ] UI не угадывает `node_id`: Jump возможен только если `node_id`/`span_id` есть в событии.
 - [ ] Событие может содержать `debug_ref` (event_id/span_id) для подгрузки Details из Debugger Core (без дубляжа данных).
 

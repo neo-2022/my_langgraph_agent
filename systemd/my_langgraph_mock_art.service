@@ -1,0 +1,15 @@
+[Unit]
+Description=LangGraph Mock Art Stream
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/my_langgraph_agent
+ExecStart=/bin/bash -lc 'source %h/my_langgraph_agent/venv/bin/activate && python scripts/mock_art_stream.py --host 127.0.0.1 --port 7331'
+Restart=always
+RestartSec=2
+Environment=PATH=%h/my_langgraph_agent/venv/bin:/usr/local/bin:/usr/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

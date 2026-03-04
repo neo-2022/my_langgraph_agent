@@ -9,6 +9,39 @@ app = FastAPI()
 
 MAX_EVENTS = 5
 
+MOCK_EVENTS = [
+    {
+        "node_id": "call_model",
+        "type": "node_start",
+        "status": "running",
+        "payload": {"short_result": "Mock thinking..."},
+    },
+    {
+        "node_id": "call_model",
+        "type": "node_end",
+        "status": "done",
+        "duration": 150,
+        "payload": {
+            "short_result": "Result from mock call_model",
+            "short_error": "",
+        },
+        "metadata": {"state_diff": {"answer": "42"}},
+    },
+    {
+        "node_id": "tools",
+        "type": "node_start",
+        "status": "running",
+        "payload": {"short_result": "Invoking tools"},
+    },
+    {
+        "node_id": "tools",
+        "type": "node_end",
+        "status": "done",
+        "duration": 80,
+        "payload": {"short_result": "Tool output", "short_error": ""},
+    },
+]
+
 @app.get("/api/v1/stream")
 async def stream(cursor: Optional[str] = None, request: Request = None):
     try:
@@ -17,14 +50,24 @@ async def stream(cursor: Optional[str] = None, request: Request = None):
         start = 1
     async def content():
         seq = start
-        while seq < start + MAX_EVENTS:
+        for template in MOCK_EVENTS:
             if request and await request.is_disconnected():
                 break
             payload = {
                 "event_id": f"mock-{seq}",
                 "sequence_id": seq,
                 "cursor": str(seq),
-                "message": f"mock event {seq}",
+                "type": template["type"],
+                "name": template["type"],
+                "origin": "mock-art",
+                "context": {
+                    "node_id": template["node_id"],
+                    "span_id": f"span-{seq}",
+                },
+                "status": template.get("status"),
+                "duration_ms": template.get("duration"),
+                "payload": template.get("payload"),
+                "metadata": template.get("metadata"),
             }
             line = f"data: {json.dumps(payload)}\n\n"
             yield line.encode("utf-8")

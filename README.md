@@ -27,6 +27,8 @@ UI Proxy (`my_langgraph_ui_proxy.service`) и React UI (`my_langgraph_react_ui.s
 ```bash
 systemctl --user enable --now my_langgraph_ui_proxy.service
 systemctl --user enable --now my_langgraph_react_ui.service
+
+Дополнительно `run.sh` теперь устанавливает системный сервис `my_langgraph_mock_art.service`, который запускает `scripts/mock_art_stream.py` и отдаёт фейковые SSE-ивенты и ingest-эндпоинт на `http://127.0.0.1:7331`. UI Proxy подхватывает их через `ART_STREAM_URL`, поэтому инспектор и граф заполняются даже если реальный Art/Graph недоступны. Проверить работу можно командой `systemctl --user status my_langgraph_mock_art.service` или временно остановить/запустить сервис вручную через `start|stop`.
 ```
 
 UI Proxy также проксирует SSE downlink `/ui/art/stream` к `ART_STREAM_URL` (по умолчанию `http://127.0.0.1:7331/api/v1/stream`). Укажи нужный URL через переменную окружения `ART_STREAM_URL`, если Art смотрит на другой адрес.

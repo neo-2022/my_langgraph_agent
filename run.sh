@@ -55,6 +55,7 @@ SERVICES=(
   "my_langgraph.service"
   "my_langgraph_ui_proxy.service"
   "my_langgraph_react_ui.service"
+  "my_langgraph_mock_art.service"
 )
 
 mkdir -p "$SYSTEMD_USER_DIR"
@@ -71,3 +72,4 @@ echo "LangGraph API:  http://$LANGGRAPH_HOST:$LANGGRAPH_PORT"
 echo "LangGraph Docs: http://$LANGGRAPH_HOST:$LANGGRAPH_PORT/docs"
 echo "UI Proxy:       http://$UI_PROXY_HOST:$UI_PROXY_PORT"
 echo "React UI:       http://$REACT_HOST:$REACT_PORT"
+echo "Mock Art:       http://127.0.0.1:7331/api/v1/stream"

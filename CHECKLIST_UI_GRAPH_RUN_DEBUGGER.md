@@ -5,6 +5,7 @@
 Этот файл фиксирует, **что именно** реализуем.
 `TASKS.md` и `ROADMAP.md` должны соответствовать этому списку.
 
+- Wrapper в Art: `https://github.com/neo-2022/Art/blob/main/docs/source/checklists/CHECKLIST_05_REGART_UI_GRAPH_RUN_DEBUGGER.md`
 - [x] Интеграция **REGART ↔ Art**: выполняется по `CHECKLIST_REGART_ART_INTEGRATION.md` (в этом файле не дублируем требования).
 
 ---

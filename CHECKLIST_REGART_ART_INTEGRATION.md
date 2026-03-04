@@ -1,6 +1,7 @@
 # CHECKLIST: REGART ↔ Art — готовность REGART к полному подключению Art
 
 Правило: **делаем строго по шагам**. Нельзя переходить к шагу N+1, пока не закрыт шаг N.
+Wrapper в Art: `https://github.com/neo-2022/Art/blob/main/docs/source/checklists/CHECKLIST_06_REGART_ART_BRIDGE.md`
 
 ---
 

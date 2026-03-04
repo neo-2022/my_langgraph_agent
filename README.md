@@ -27,9 +27,9 @@ UI Proxy (`my_langgraph_ui_proxy.service`) и React UI (`my_langgraph_react_ui.s
 ```bash
 systemctl --user enable --now my_langgraph_ui_proxy.service
 systemctl --user enable --now my_langgraph_react_ui.service
+```
 
 Дополнительно `run.sh` теперь устанавливает системный сервис `my_langgraph_mock_art.service`, который запускает `scripts/mock_art_stream.py` и отдаёт фейковые SSE-ивенты и ingest-эндпоинт на `http://127.0.0.1:7331`. UI Proxy подхватывает их через `ART_STREAM_URL`, поэтому инспектор и граф заполняются даже если реальный Art/Graph недоступны. Проверить работу можно командой `systemctl --user status my_langgraph_mock_art.service` или временно остановить/запустить сервис вручную через `start|stop`.
-```
 
 UI Proxy также проксирует SSE downlink `/ui/art/stream` к `ART_STREAM_URL` (по умолчанию `http://127.0.0.1:7331/api/v1/stream`). Укажи нужный URL через переменную окружения `ART_STREAM_URL`, если Art смотрит на другой адрес.
 
@@ -61,7 +61,17 @@ LangGraph, UI Proxy и React UI всегда запускаются как user 
 
 Документация:
 - `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md` — единый источник правды по UI/Graph/Run/Debugger
+- `CHECKLIST_REGART_ART_INTEGRATION.md` — единый источник правды по интеграции REGART ↔ Art
 - `ui/src/debugger/README.md` — подробная спецификация сквозного Debugger (фон + панель + события + корреляция)
+- `docs/integration/REGART_ART_CONTRACT.md` — технический контракт RawEvent/ingest/stream/attachments
+
+## Связка Art + REGART (единая программа)
+
+- Этот репозиторий — REGART-часть единой программы.
+- Art развивается в отдельном репозитории: `https://github.com/neo-2022/Art`.
+- Wrapper-этапы Art ссылаются на source-of-truth этого репозитория:
+  - Art Stage 05 wrapper: `docs/source/checklists/CHECKLIST_05_REGART_UI_GRAPH_RUN_DEBUGGER.md` → `CHECKLIST_UI_GRAPH_RUN_DEBUGGER.md`
+  - Art Stage 06 wrapper: `docs/source/checklists/CHECKLIST_06_REGART_ART_BRIDGE.md` → `CHECKLIST_REGART_ART_INTEGRATION.md`
 
 ## Сквозной Debugger (UI/Run/Graph/Models/Tools/Network)
 - Единый слой ошибок для всего интерфейса: Run stream / API / UI proxy / Graph / Models / Tools / React.

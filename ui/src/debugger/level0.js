@@ -420,6 +420,7 @@ function debugEventToRaw(ev) {
       schema_version: "debug_event@1",
       event_id: toStr(e.event_id) || genId("ev"),
       ts: toStr(e.ts) || nowIso(),
+      timestamp: toStr(e.ts) || nowIso(),
       level: toStr(e.level) || "info",
       name: toStr(e.name) || "ui.event",
       origin: toStr(e.origin) || "frontend",
@@ -438,6 +439,13 @@ function debugEventToRaw(ev) {
           : undefined,
       links: e.links && typeof e.links === "object" ? e.links : undefined,
       ui: e.ui && typeof e.ui === "object" ? e.ui : undefined,
+      type: toStr(e.type || e.kind || e.name),
+      status: toStr(e.status || e.state || undefined) || undefined,
+      duration_ms:
+        Number.isFinite(Number(e.duration_ms ?? e.duration ?? e.run_duration))
+          ? Number(e.duration_ms ?? e.duration ?? e.run_duration)
+          : undefined,
+      metadata: e.metadata && typeof e.metadata === "object" ? { ...e.metadata } : undefined,
     };
 
     ringPush(state.events, "events", "events", out);

@@ -748,15 +748,17 @@ export default function GraphView({
     if (typeof window === "undefined") return undefined;
     const dbg0 = window.__DBG0__;
     if (!dbg0 || typeof dbg0.subscribeEvents !== "function") return undefined;
-    const snap = typeof dbg0.snapshot === "function" ? dbg0.snapshot({ events: 200 }) : null;
+    const snap = typeof dbg0.snapshot === "function" ? dbg0.snapshot({ events: 400 }) : null;
     const events = Array.isArray(snap?.events) ? snap.events : [];
     events.forEach((ev) => {
       const type = String(ev?.type || ev?.kind || ev?.name || "").toLowerCase();
       if (type === "edge_chosen") {
         handleEdgeChosen(ev);
       }
+      handleDebugEvent(ev);
     });
     const unsub = dbg0.subscribeEvents((ev) => {
+      handleDebugEvent(ev);
       const type = String(ev?.type || ev?.kind || ev?.name || "").toLowerCase();
       if (type === "edge_chosen") {
         handleEdgeChosen(ev);
@@ -767,7 +769,7 @@ export default function GraphView({
         if (typeof unsub === "function") unsub();
       } catch {}
     };
-  }, [handleEdgeChosen]);
+  }, [handleEdgeChosen, handleDebugEvent]);
 
   useEffect(() => {
     setEdges((prev) =>

@@ -301,9 +301,33 @@ a:hover {
   padding: 8px;
   border-right: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.02);
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
-  max-width: calc(var(--drawer-w) * 3 + 34px);
+  max-width: min(calc(var(--drawer-w) * 3 + 34px), calc(100vw - var(--rail-w) - 56px));
+  position: relative;
+}
+
+.drawers__resizer {
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  cursor: ew-resize;
+  z-index: 20;
+}
+
+.drawers__resizer::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 60px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.35);
 }
 
 .drawer {
@@ -473,6 +497,7 @@ a:hover {
 
 /* Graph containers (Graph tab + SplitView panes) */
 .graph-host {
+  position: relative;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -491,6 +516,174 @@ a:hover {
   width: 100%;
   min-width: 0;
   align-self: stretch;
+}
+
+.node-inspector {
+  position: absolute;
+  top: 72px;
+  right: 24px;
+  width: 330px;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.70);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+}
+
+.node-inspector--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.node-inspector__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.node-inspector__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+
+.node-inspector__grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.node-inspector__copy-status {
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: rgba(145, 255, 185, 0.92);
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+.node-inspector__copy-block {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 8px;
+  margin-bottom: 8px;
+}
+
+.node-inspector__copy-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.node-inspector__copy-btn {
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 10px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.node-inspector__copy-btn:hover {
+  border-color: rgba(135, 195, 255, 0.9);
+  color: rgba(135, 195, 255, 0.95);
+}
+
+.node-inspector__copy-pre {
+  max-height: 90px;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.node-inspector__copy-pre--error {
+  background: rgba(255, 90, 90, 0.08);
+  border: 1px solid rgba(255, 90, 90, 0.2);
+}
+
+.node-inspector__block {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 8px;
+}
+
+.node-inspector__events {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node-inspector__event {
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.node-inspector__event-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.85);
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+.node-inspector__event-level {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 9px;
+  letter-spacing: 0.15px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.node-inspector__event-message {
+  font-size: 12px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.75);
+  word-break: break-word;
+}
+
+.node-inspector__meta {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 8px;
+}
+
+.node-inspector__meta pre {
+  max-height: 120px;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 11px;
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 /* Graph tab: let inner panes handle scroll, keep stable height for ReactFlow */
@@ -927,6 +1120,21 @@ a:hover {
   gap: 12px;
   align-items: center;
   flex-wrap: nowrap;
+}
+
+.graphbar__hover {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  gap: 6px;
+}
+
+.graphbar__hover__label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 /* Brand title (LangGraph): золото */

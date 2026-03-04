@@ -16,6 +16,9 @@ function getClientX(event) {
   return event.clientX ?? null;
 }
 
+const MIN_LEFT_PERCENT = 0;
+const MAX_LEFT_PERCENT = 100;
+
 export default function SplitView({
   mode,
   onModeChange, // eslint-disable-line no-unused-vars
@@ -55,15 +58,15 @@ export default function SplitView({
     const clientX = getClientX(event);
     if (!root || typeof clientX !== "number" || Number.isNaN(clientX)) return;
 
-    const rect = root.getBoundingClientRect();
-    const curPct = leftPct;
+      const rect = root.getBoundingClientRect();
+      const curPct = leftPct;
 
-    dragRef.current = {
-      active: true,
-      startX: clientX,
-      startPct: curPct,
-      rectW: rect.width || 1,
-    };
+      dragRef.current = {
+        active: true,
+        startX: clientX,
+        startPct: curPct,
+        rectW: rect.width || 1,
+      };
     setIsDragging(true);
     event?.preventDefault?.();
 
@@ -78,7 +81,7 @@ export default function SplitView({
       const dx = moveX - st.startX;
       const px = (st.startPct / 100) * st.rectW + dx;
       const pct = (px / st.rectW) * 100;
-      const clamped = Math.max(22, Math.min(78, pct));
+      const clamped = Math.max(MIN_LEFT_PERCENT, Math.min(MAX_LEFT_PERCENT, pct));
       setLeftPct(clamped);
     };
 
@@ -117,7 +120,7 @@ export default function SplitView({
               flexBasis: `${leftPct}%`,
               flexGrow: 0,
               flexShrink: 0,
-              minWidth: 360,
+              minWidth: 0,
             }}
           >
             {left}

@@ -244,6 +244,29 @@ function rfEdgeFromApi(e) {
   };
 }
 
+function durationFromInfo(info) {
+  if (!info) return undefined;
+  if (Number.isFinite(Number(info.duration))) {
+    return Number(info.duration);
+  }
+  const started = Number(info.startedAt ?? info.startTs);
+  const finished = Number(info.finishedAt);
+  if (Number.isFinite(started) && Number.isFinite(finished)) {
+    return finished - started;
+  }
+  if (Number.isFinite(started)) {
+    return Date.now() - started;
+  }
+  return undefined;
+}
+
+function formatDurationLabel(value) {
+  if (!Number.isFinite(Number(value))) return "—";
+  const ms = Number(value);
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+}
+
 function layoutDagre(nodes, edges, direction) {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
@@ -408,7 +431,12 @@ function FancySelect({
   );
 }
 
-export default function GraphView({ assistantId, focusNodeId = "", onNodeSelected }) {
+export default function GraphView({
+  assistantId,
+  focusNodeId = "",
+  onNodeSelected,
+  onInspectNode,
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -427,6 +455,14 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
   const wrapRef = useRef(null);
   const [hasViewportSize, setHasViewportSize] = useState(false);
   const manualPositionsRef = useRef(false);
+  const [nodeStatusTick, setNodeStatusTick] = useState(0);
+  const nodeStatusRef = useRef({});
+  const [hoveredNodeInfo, setHoveredNodeInfo] = useState(null);
+  const spanToNodeRef = useRef({});
+  const [highlightedEdgeId, setHighlightedEdgeId] = useState("");
+  const [conditionalEdgeIds, setConditionalEdgeIds] = useState(new Set());
+  const edgeDetailsRef = useRef(new Map());
+  const selectedNodeIdRef = useRef("");
 
   // Минимальный "пинок":
   // - ждём 2 кадра (layout -> paint), потом fitView
@@ -454,12 +490,55 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     });
   }, []);
 
+  const dispatchInspectNode = useCallback(
+    (nodeId) => {
+      const normalized = String(nodeId || "");
+      selectedNodeIdRef.current = normalized;
+      const info = normalized ? nodeStatusRef.current[String(normalized)] || null : null;
+      if (typeof onInspectNode === "function") {
+        onInspectNode(normalized, info);
+      }
+      return normalized;
+    },
+    [onInspectNode]
+  );
+
+  const handleNodeMouseEnter = useCallback(
+    (_evt, node) => {
+      if (!node) {
+        setHoveredNodeInfo(null);
+        return;
+      }
+      const nodeId = String(node.id || "");
+      if (!nodeId) {
+        setHoveredNodeInfo(null);
+        return;
+      }
+      const info = node.data?.statusInfo || nodeStatusRef.current[nodeId] || null;
+      if (info) {
+        setHoveredNodeInfo({ nodeId, info });
+      } else {
+        setHoveredNodeInfo(null);
+      }
+    },
+    []
+  );
+
+  const handleNodeMouseLeave = useCallback(() => {
+    setHoveredNodeInfo(null);
+  }, []);
+
   const normalizeFocusId = useCallback((id) => {
     const s = String(id || "");
     if (s === "agent" || s === "model") return "call_model";
     if (s === "user" || s === "start") return "__start__";
     if (s === "end") return "__end__";
     return s;
+  }, []);
+
+  const stripStatusClasses = useCallback((className = "") => {
+    if (!className) return "";
+    return className.replace(/\blg-node--status-\w+\b/g, "").replace(/\blg-node--slow\b/g, "").trim();
   }, []);
 
   const applyFocus = useCallback(
@@ -476,7 +555,11 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         }))
       );
 
-      if (!nextId) return;
+      if (!nextId) {
+        dispatchInspectNode("");
+        return;
+      }
+      dispatchInspectNode(nextId);
 
       const liveNodes = typeof inst.getNodes === "function" ? inst.getNodes() : [];
       const node = liveNodes.find((n) => String(n.id) === nextId);
@@ -490,9 +573,217 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
           includeHiddenNodes: true,
         });
       } catch {}
-    },
+  },
     [setNodes, normalizeFocusId]
   );
+
+  const recordNodeStatus = useCallback(
+    (nodeId, info) => {
+      if (!nodeId) return;
+      const next = { ...(nodeStatusRef.current || {}) };
+      next[nodeId] = { ...(next[nodeId] || {}), ...info };
+      nodeStatusRef.current = next;
+      setNodeStatusTick((prev) => prev + 1);
+      if (String(selectedNodeIdRef.current) === String(nodeId)) {
+        dispatchInspectNode(nodeId);
+      }
+    },
+    [dispatchInspectNode]
+  );
+
+  const handleDebugEvent = useCallback(
+    (ev) => {
+      if (!ev || typeof ev !== "object") return;
+      const ctx = ev.context && typeof ev.context === "object" ? ev.context : {};
+      const nodeId = String(ctx.node_id || ev.node_id || "").trim();
+      const spanId = String(ctx.span_id || ev.span_id || "").trim();
+      const parentSpanId = String(ctx.parent_span_id || ev.parent_span_id || "").trim();
+      const type = String(ev.type || ev.kind || ev.name || "").toLowerCase();
+      const statusSignal = String(ev.status || ev.state || "").toLowerCase();
+      const durationVal = Number.isFinite(Number(ev.duration_ms ?? ev.duration ?? ev.run_duration ?? 0))
+        ? Number(ev.duration_ms ?? ev.duration ?? ev.run_duration ?? 0)
+        : undefined;
+
+      if (spanId && nodeId) {
+        spanToNodeRef.current[spanId] = nodeId;
+      }
+
+      if (nodeId) {
+        const info = { ...(nodeStatusRef.current[nodeId] || {}) };
+        const now = Date.now();
+        if (type === "node_start") {
+          info.status = "running";
+          info.startTs = now;
+          info.duration = undefined;
+          info.startedAt = ev.ts ? Date.parse(ev.ts) : now;
+        } else if (type === "node_end" || type === "node_done") {
+          info.status = statusSignal === "error" ? "error" : "done";
+          info.duration = durationVal ?? info.duration;
+          info.finishedAt = now;
+        } else if (type === "tool_start") {
+          info.status = "running";
+          info.tool = ev?.payload?.tool_name || info.tool;
+          info.startTs = now;
+        } else if (type === "tool_end") {
+          info.status = statusSignal === "error" ? "error" : "done";
+          info.duration = durationVal ?? info.duration;
+        }
+        info.spanId = spanId || info.spanId;
+        if (parentSpanId) {
+          info.parentSpanId = parentSpanId;
+          const parentNode = spanToNodeRef.current[parentSpanId];
+          if (parentNode) info.parentNode = parentNode;
+        }
+        if (info.status === "running" && info.startTs) {
+          info.isSlow = now - Number(info.startTs) > 2000;
+        } else if (info.duration) {
+          info.isSlow = Number(info.duration) > 2000;
+        }
+        const summary = {
+          id: String(ev?.event_id || `${type}-${nodeId}-${now}`),
+          ts: ev?.ts || now,
+          name: ev?.name || type,
+          message: String(ev?.message || (ev?.payload && ev.payload.message) || ""),
+          payload: ev.payload,
+        };
+        const eventsArr = Array.isArray(info.events) ? info.events.slice(-6) : [];
+        info.events = [...eventsArr, summary];
+        if (ev.payload && typeof ev.payload === "object") {
+          const shortResult = ev.payload.short_result || ev.payload.result;
+          if (shortResult != null) {
+            info.shortResult = typeof shortResult === "string" ? shortResult : JSON.stringify(shortResult);
+          }
+          const shortError = ev.payload.short_error || ev.payload.error;
+          if (shortError) {
+            info.shortError = typeof shortError === "string" ? shortError : JSON.stringify(shortError);
+          }
+          if (ev.metadata && typeof ev.metadata === "object") {
+            info.metadata = { ...(info.metadata || {}), ...ev.metadata };
+          }
+        }
+        recordNodeStatus(nodeId, info);
+      }
+
+      if (type === "edge_chosen") {
+        const edge = ev?.payload?.edge;
+        const id = edge && typeof edge === "object" ? String(edge.id || `${edge.source ?? ""}->${edge.target ?? ""}`) : "";
+        if (id) setHighlightedEdgeId(id);
+      }
+    },
+    [recordNodeStatus]
+  );
+
+  const updateNodesForStatus = useCallback(() => {
+    const statuses = nodeStatusRef.current || {};
+    setNodes((prev) =>
+      prev.map((node) => {
+        const info = statuses[node.id];
+        const baseClass = stripStatusClasses(node.className || "");
+        if (!info) {
+          return {
+            ...node,
+            className: baseClass,
+            data: { ...node.data, statusInfo: undefined },
+          };
+        }
+        const statusClass = `lg-node--status-${info.status || "running"}`;
+        const slowClass = info.isSlow ? "lg-node--slow" : "";
+        const originalLabel = node.data?.__lgOriginalLabel || node.data?.label || node.id;
+        const parentBadge = info.parentNode
+          ? (
+            <div className="graphview__node-label">
+              <span>{originalLabel}</span>
+              <span className="graphview__parentBadge">called by {info.parentNode}</span>
+            </div>
+          )
+          : originalLabel;
+        return {
+          ...node,
+          className: [baseClass, statusClass, slowClass].filter(Boolean).join(" ").trim(),
+          data: {
+            ...node.data,
+            statusInfo: info,
+            label: parentBadge,
+            __lgOriginalLabel: originalLabel,
+          },
+        };
+      })
+    );
+  }, [setNodes, stripStatusClasses]);
+
+  useEffect(() => {
+    updateNodesForStatus();
+  }, [nodeStatusTick, updateNodesForStatus]);
+
+  const handleEdgeChosen = useCallback(
+    (edgeEvent) => {
+      const metadata = edgeEvent?.metadata || {};
+      const payload = edgeEvent?.payload;
+      const edge = payload?.edge || {};
+      const id = String(edge?.id || `${edge?.source ?? ""}->${edge?.target ?? ""}`).trim();
+      if (!id) return;
+      const reason = String(edge?.reason || payload?.reason || "").trim();
+      const labelBase = String(edge?.label || payload?.label || "conditional").trim();
+      const label = reason ? `${labelBase} (${reason})` : labelBase;
+      edgeDetailsRef.current.set(id, { label, reason, metadata });
+      setHighlightedEdgeId(id);
+      setEdges((prev) =>
+        prev.map((e) => {
+          if (e.id !== id) return e;
+          return {
+            ...e,
+            label,
+            data: {
+              ...e.data,
+              edgeReason: reason,
+            },
+          };
+        })
+      );
+    },
+    [setEdges]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const dbg0 = window.__DBG0__;
+    if (!dbg0 || typeof dbg0.subscribeEvents !== "function") return undefined;
+    const snap = typeof dbg0.snapshot === "function" ? dbg0.snapshot({ events: 200 }) : null;
+    const events = Array.isArray(snap?.events) ? snap.events : [];
+    events.forEach((ev) => {
+      const type = String(ev?.type || ev?.kind || ev?.name || "").toLowerCase();
+      if (type === "edge_chosen") {
+        handleEdgeChosen(ev);
+      }
+    });
+    const unsub = dbg0.subscribeEvents((ev) => {
+      const type = String(ev?.type || ev?.kind || ev?.name || "").toLowerCase();
+      if (type === "edge_chosen") {
+        handleEdgeChosen(ev);
+      }
+    });
+    return () => {
+      try {
+        if (typeof unsub === "function") unsub();
+      } catch {}
+    };
+  }, [handleEdgeChosen]);
+
+  useEffect(() => {
+    setEdges((prev) =>
+      prev.map((edge) => {
+        const isActive = highlightedEdgeId && edge.id === highlightedEdgeId;
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            stroke: isActive ? "rgba(185,200,255,0.96)" : "rgba(255,255,255,0.26)",
+            strokeWidth: isActive ? 2.6 : 1.4,
+          },
+        };
+      })
+    );
+  }, [highlightedEdgeId, setEdges]);
 
   const loadGraph = useCallback(async () => {
     if (!assistantId) return;
@@ -564,8 +855,46 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
         return;
       }
 
+      const outgoingCounts = {};
+      for (const edge of apiEdges) {
+        const src = String(edge?.source || "");
+        if (!src) continue;
+        outgoingCounts[src] = (outgoingCounts[src] || 0) + 1;
+      }
+      const conditionalEdgeIds = new Set();
+      for (const edge of apiEdges) {
+        const src = String(edge?.source || "");
+        if (!src) continue;
+        if (outgoingCounts[src] > 1) {
+          const id = String(edge?.id ?? `${edge?.source ?? ""}->${edge?.target ?? ""}`);
+          conditionalEdgeIds.add(id);
+        }
+      }
       const rfNodes = apiNodes.map(rfNodeFromApi);
-      const rfEdges = apiEdges.map(rfEdgeFromApi);
+      const rfEdges = apiEdges.map((edge) => {
+        const base = rfEdgeFromApi(edge);
+        const isConditional = conditionalEdgeIds.has(base.id);
+        const meta = edgeDetailsRef.current.get(base.id);
+        const label = meta?.label
+          ? meta.label
+          : isConditional
+            ? String(edge?.condition || edge?.label || "conditional")
+            : base.label;
+        const className = [base.className, isConditional ? "lg-edge--conditional" : ""]
+          .filter(Boolean)
+          .join(" ");
+        return {
+          ...base,
+        label,
+        isConditional,
+        className,
+        data: {
+          ...base.data,
+          reason: meta?.reason,
+          metadata: meta?.metadata,
+        },
+        };
+      });
 
       const laid = layoutDagre(rfNodes, rfEdges, direction);
       const storedPositions = readStoredPositions(assistantId);
@@ -591,6 +920,7 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
       graphCache.fingerprint = fingerprint;
       graphCache.nodes = nodesWithPositions;
       graphCache.edges = laid.edges;
+      setConditionalEdgeIds(conditionalEdgeIds);
 
       const snapshotData = {
         assistantId,
@@ -835,15 +1165,18 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
 
   const onNodeClick = useCallback(
     (_e, node) => {
-      onNodeSelected?.(String(node?.id || ""));
+      const id = String(node?.id || "");
+      dispatchInspectNode(id);
+      onNodeSelected?.(id);
     },
-    [onNodeSelected]
+    [dispatchInspectNode, onNodeSelected]
   );
 
   const onPaneClick = useCallback(() => {
+    dispatchInspectNode("");
     onNodeSelected?.("");
     applyFocus("");
-  }, [applyFocus, onNodeSelected]);
+  }, [applyFocus, onNodeSelected, dispatchInspectNode]);
 
   const handleNodesChange = useCallback(
     (changes) => {
@@ -931,6 +1264,21 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
     return "";
   }, [assistantId, loading, error, hasGraph]);
 
+  const hoverDescription = useMemo(() => {
+    if (!hoveredNodeInfo) return "";
+    const status = hoveredNodeInfo.info?.status || "idle";
+    const durationVal = durationFromInfo(hoveredNodeInfo.info);
+    const toolLabel = hoveredNodeInfo.info?.tool || hoveredNodeInfo.info?.tool_name;
+    const parts = [`${hoveredNodeInfo.nodeId}`, status];
+    if (Number.isFinite(Number(durationVal))) {
+      parts.push(formatDurationLabel(durationVal));
+    }
+    if (toolLabel) {
+      parts.push(`tool ${toolLabel}`);
+    }
+    return parts.join(" • ");
+  }, [hoveredNodeInfo]);
+
 
   return (
     <div
@@ -990,6 +1338,14 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
           <div className="hint" style={{ marginTop: 0 }}>
             {hint}
           </div>
+          <div className="graphbar__hover">
+            {hoverDescription ? (
+              <span className="graphbar__hover__text">
+                <span className="graphbar__hover__label">Состояние:</span>
+                <strong>{hoverDescription}</strong>
+              </span>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -1005,8 +1361,10 @@ export default function GraphView({ assistantId, focusNodeId = "", onNodeSelecte
               }}
               onNodesChange={handleNodesChange}
               onEdgesChange={onEdgesChange}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
+              onNodeMouseEnter={handleNodeMouseEnter}
+              onNodeMouseLeave={handleNodeMouseLeave}
+              onNodeClick={onNodeClick}
+              onPaneClick={onPaneClick}
             onError={onFlowError}
             fitView
             fitViewOptions={{ padding: 0.25, includeHiddenNodes: true }}

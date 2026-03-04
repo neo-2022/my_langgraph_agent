@@ -171,25 +171,26 @@
 
 - #### 2.2.1 Расширение контракта (оптимально, без хардкода)
 - [x] `trace_id`, `span_id`, `parent_span_id`, `run_id`, `assistant_id`, `node_id`, `attrs`, `payload`, `links` и `debug_ref` уже записываются (`ui/src/debugger/level0.js` `pushEvent`).
-- [ ] UI не угадывает `node_id`: Jump возможен только если `node_id`/`span_id` есть в событии.
-- [ ] Событие может содержать `debug_ref` (event_id/span_id) для подгрузки Details из Debugger Core (без дубляжа данных).
+ - [x] UI не угадывает `node_id`: Jump возможен только если `node_id`/`span_id` есть в событии.
+ - [x] Событие может содержать `debug_ref` (event_id/span_id) для подгрузки Details из Debugger Core (без дубляжа данных).
 
-- [ ] type: node_start | node_end | tool_start | tool_end | edge_chosen
-- [ ] timestamp: ISO 8601
-- [ ] run_id: uuid
-- [ ] span_id: string (уникальный id span)
-- [ ] parent_span_id?: string
-- [ ] status: running | ok | error
-- [ ] duration_ms?: number
+- [x] type: node_start | node_end | tool_start | tool_end | edge_chosen
+- [x] timestamp: ISO 8601
+- [x] run_id: uuid
+- [x] span_id: string (уникальный id span)
+- [x] parent_span_id?: string
+- [x] status: running | ok | error
+- [x] duration_ms?: number
 
 Идентификация:
-- [ ] node_id?: string (для node_*)
-- [ ] tool_name?: string (для tool_*)
+- [x] node_id?: string (для node_*)
+- [x] tool_name?: string (для tool_*)
 
-Edge (только для edge_chosen):
-- [ ] edge.source, edge.target
-- [ ] edge.label? (маршрут A / поиск / fallback)
-- [ ] edge.reason? (почему выбран)
+- [x] edge.source, edge.target
+- [x] edge.label? (маршрут A / поиск / fallback)
+- [x] edge.reason? (почему выбран)
+
+- [x] metadata: object (произвольные данные)
 
 Дополнительно:
 - [ ] metadata: object (произвольные данные)
@@ -199,20 +200,20 @@ Edge (только для edge_chosen):
 ## 3) Подсветка на графе во время stream (обязательно)
 
 ### 3.1 Базовый слой (всегда видно)
-- [ ] Активный узел: running
-- [ ] Завершённый узел: done
-- [ ] Ошибка: error
+- [x] Активный узел: running
+- [x] Завершённый узел: done
+- [x] Ошибка: error
 
 ### 3.2 Долгие операции
-- [ ] Если узел running > 2s → показать индикатор (пульсация/спиннер)
+- [x] Если узел running > 2s → показать индикатор (пульсация/спиннер)
 
 ### 3.3 Conditional edges
-- [ ] Подсветка выбранной ветки
-- [ ] Debug Mode: все возможные conditional edges серым, активную подсвечивать + label
+- [x] Подсветка выбранной ветки
+- [x] Debug Mode: все возможные conditional edges серым, активную подсвечивать + label
 
 ### 3.4 Parent tracking (важно для параллельности)
-- [ ] parent_span_id обязателен в событиях
-- [ ] UI показывает, кто вызвал узел (подсветка входящего ребра / бейдж called by)
+- [x] parent_span_id обязателен в событиях
+- [x] UI показывает, кто вызвал узел (подсветка входящего ребра / бейдж called by)
 
 ---
 

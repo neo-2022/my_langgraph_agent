@@ -150,6 +150,54 @@
     inset 0 1px 0 rgba(255,255,255,0.08) !important;
 }
 
+.graphview__node-label span:first-child{
+  display: block;
+}
+
+.graphview__parentBadge{
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.65);
+}
+
+.graphview .react-flow__node.lg-node--status-running .react-flow__node-default{
+  border-color: rgba(255,230,140,0.68) !important;
+  background: rgba(255,220,120,0.14) !important;
+}
+
+.graphview .react-flow__node.lg-node--status-done .react-flow__node-default{
+  border-color: rgba(145,255,185,0.52) !important;
+  background: rgba(145,255,185,0.12) !important;
+}
+
+.graphview .react-flow__node.lg-node--status-error .react-flow__node-default{
+  border-color: rgba(255,120,130,0.68) !important;
+  background: rgba(255,120,130,0.12) !important;
+}
+
+.graphview .react-flow__node.lg-node--slow .react-flow__node-default::after{
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,200,110,0.6);
+  animation: slowPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes slowPulse{
+  0%{
+    opacity: 0.1;
+  }
+  50%{
+    opacity: 0.65;
+  }
+  100%{
+    opacity: 0.1;
+  }
+}
+
 /* Selected/focus — ярче, чтобы было видно */
 .graphview .react-flow__node-default.selected,
 .graphview .react-flow__node-default:focus-within{
@@ -191,6 +239,21 @@
 .graphview .react-flow__node[data-id="call_model"] .react-flow__node-default{
   border-color: rgba(255,210,140,0.38) !important;
   background: rgba(255,210,140,0.10) !important;
+}
+
+.graphview .react-flow__edge.lg-edge--conditional .react-flow__edge-path{
+  stroke: rgba(255,255,255,0.24) !important;
+  stroke-width: 1.4 !important;
+  opacity: 0.6;
+}
+
+.graphview .react-flow__edge.lg-edge--conditional .react-flow__edge-text,
+.graphview .react-flow__edge.lg-edge--conditional .react-flow__edge-textbg{
+  opacity: 0.7 !important;
+}
+
+.graphview .react-flow__edge.lg-edge--conditional .react-flow__edge-textbg{
+  fill: rgba(0,0,0,0.38) !important;
 }
 
 /* MiniMap */

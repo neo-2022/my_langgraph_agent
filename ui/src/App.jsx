@@ -4,6 +4,7 @@ import "./App.css";
 import "reactflow/dist/style.css";
 import GraphView from "./GraphView.jsx";
 import SplitView from "./SplitView.jsx";
+import Tooltip from "./Tooltip.jsx";
 import { getUiErrorCore } from "./debugger/core.js";
 import { fetchClientInfo } from "./obs/clientInfo.js";
 import { httpClient, stream as httpStream } from "./obs/httpClient.js";
@@ -513,6 +514,14 @@ async function postJson(path, body) {
   }
 }
 
+const DEFAULT_DRAWER_WIDTH = 340;
+const DRAWER_MIN_WIDTH = 260;
+const DRAWER_MAX_WIDTH = 520;
+const DRAWER_STORAGE_KEY = "lg:drawerWidth";
+const RAIL_WIDTH = 64;
+const MIN_MAIN_WIDTH = 480;
+const DRAWERS_GAP = 56;
+
 function PanelShell({ title, onClose, children }) {
   return (
     <section className="drawer">
@@ -733,6 +742,7 @@ export default function App() {
   // - хранится в localStorage
   // - повторный клик по "Run": run <-> split
   const prevTabRef = useRef("run");
+  const inspectorCopyTimerRef = useRef(null);
   const [splitMode, setSplitMode] = useState(() => {
     try {
       return localStorage.getItem("splitview:mode") || "run";
@@ -762,6 +772,8 @@ export default function App() {
   }, [tab]);
 
   const [focusNodeId, setFocusNodeId] = useState("");
+  const [inspectedNode, setInspectedNode] = useState(null);
+  const [inspectorCopyStatus, setInspectorCopyStatus] = useState("");
   const [debugOpen, setDebugOpen] = useState(false);
 
   // Debugger Level 1 Core (UiError)
@@ -787,6 +799,68 @@ export default function App() {
   const [dbgRefreshOk, setDbgRefreshOk] = useState(false);
     const [dbgBundleOk, setDbgBundleOk] = useState(false);
     const [dbgClearOk, setDbgClearOk] = useState(false);
+
+  const formatTime = useCallback((value) => {
+    if (!value && value !== 0) return "—";
+    const num = typeof value === "string" ? Date.parse(value) : Number(value);
+    if (!Number.isFinite(num)) return "—";
+    try {
+      return new Date(num).toLocaleTimeString("ru-RU", { hour12: false });
+    } catch {
+      return new Date(num).toISOString();
+    }
+  }, []);
+
+  const formatDuration = useCallback((val) => {
+    if (val == null || !Number.isFinite(Number(val))) return "—";
+    const ms = Number(val);
+    return `${ms} ms`;
+  }, []);
+
+  const handleInspectNode = useCallback((nodeId, info) => {
+    if (!nodeId) {
+      setInspectedNode(null);
+      return;
+    }
+    setInspectedNode({ nodeId, info: info || {} });
+  }, []);
+
+  const copyInspectorValue = useCallback((value, label) => {
+    if (value == null) return;
+    const text = typeof value === "string" ? value : prettyJson(value);
+    if (!text) return;
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).catch(() => {});
+    } else if (typeof document !== "undefined") {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      area.style.pointerEvents = "none";
+      document.body.appendChild(area);
+      area.focus();
+      area.select();
+      try {
+        document.execCommand("copy");
+      } catch {}
+      document.body.removeChild(area);
+    }
+    setInspectorCopyStatus(`Скопировано: ${label}`);
+    if (inspectorCopyTimerRef.current) {
+      window.clearTimeout(inspectorCopyTimerRef.current);
+    }
+    inspectorCopyTimerRef.current = window.setTimeout(() => {
+      setInspectorCopyStatus("");
+    }, 1400);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (inspectorCopyTimerRef.current) {
+        window.clearTimeout(inspectorCopyTimerRef.current);
+      }
+    };
+  }, []);
 
   const refreshDbg0Snap = useCallback(() => {
     try {
@@ -826,12 +900,37 @@ export default function App() {
   }, []);
 
   const [openPanels, setOpenPanels] = useState(["general"]);
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const drawerWidthRef = useRef(DEFAULT_DRAWER_WIDTH);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAWER_STORAGE_KEY);
+      if (raw) {
+        const parsed = Number(raw);
+        if (!Number.isNaN(parsed)) {
+          const clamped = Math.min(DRAWER_MAX_WIDTH, Math.max(DRAWER_MIN_WIDTH, parsed));
+          setDrawerWidth(clamped);
+        }
+      }
+    } catch {}
+  }, []);
 
   const [apiStatus, setApiStatus] = useState("не проверял");
   const [apiError, setApiError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("");
   const [scannerLoading, setScannerLoading] = useState(false);
   const UI_PROXY_BASE_URL = import.meta.env.VITE_UI_PROXY_BASE_URL || "http://127.0.0.1:8090";
+
+  useEffect(() => {
+    drawerWidthRef.current = drawerWidth;
+  }, [drawerWidth]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAWER_STORAGE_KEY, String(drawerWidth));
+    } catch {}
+  }, [drawerWidth]);
 
   const apiTone = useMemo(() => {
     if (String(apiStatus).startsWith("OK")) return "good";
@@ -863,6 +962,7 @@ export default function App() {
       agent?.stop?.();
     };
   }, [UI_PROXY_BASE_URL]);
+
 
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("");
@@ -976,24 +1076,127 @@ return null;
   const seenCountRef = useRef(0);
 
   // Журнал — только для drawer "Журнал"
-  const journalEvents = useMemo(() => {
+  const [debugEvents, setDebugEvents] = useState([]);
+  const [selectedDebugDetails, setSelectedDebugDetails] = useState(null);
+
+  const handleDebugEvent = useCallback((ev) => {
+    setDebugEvents((prev) => {
+      const next = [...(prev || []), ev];
+      if (next.length > 220) next.shift();
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    let unsub = null;
+    let interval = null;
+    let attached = false;
+
+    const tryAttach = () => {
+      const dbg0 = window.__DBG0__;
+      if (!dbg0 || typeof dbg0.subscribeEvents !== "function") return false;
+      if (!attached) {
+        attached = true;
+        const snapshot = typeof dbg0.snapshot === "function" ? dbg0.snapshot({ events: 200 }) : null;
+        const initial = Array.isArray(snapshot?.events) ? snapshot.events.slice(-150) : [];
+        setDebugEvents(initial);
+      }
+      unsub = dbg0.subscribeEvents(handleDebugEvent);
+      return true;
+    };
+
+    if (!tryAttach()) {
+      interval = window.setInterval(() => {
+        if (tryAttach()) {
+          if (interval) {
+            window.clearInterval(interval);
+            interval = null;
+          }
+        }
+      }, 600);
+    }
+
+    return () => {
+      if (interval) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+      if (typeof unsub === "function") {
+        unsub();
+        unsub = null;
+      }
+    };
+  }, [handleDebugEvent]);
+
+  const resolveDebugDetails = useCallback((debugRef) => {
+    if (!debugRef || typeof window === "undefined") return null;
+    const dbg0 = window.__DBG0__;
+    if (!dbg0 || typeof dbg0.snapshot !== "function") return null;
+    try {
+      const snap = dbg0.snapshot({ events: 200 });
+      const events = Array.isArray(snap?.events) ? snap.events : [];
+      const targetEventId = String(debugRef.event_id || "");
+      const targetSpanId = String(debugRef.span_id || "");
+      return (
+        events.find((item) => {
+          if (targetEventId) {
+            const eventId = String(item?.event_id || "");
+            if (eventId && eventId === targetEventId) return true;
+          }
+          if (targetSpanId) {
+            const span = String(item?.context?.span_id || item?.span_id || "");
+            if (span && span === targetSpanId) return true;
+          }
+          return false;
+        }) || null
+      );
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const showDebugDetails = useCallback(
+    (debugRef) => {
+      if (!debugRef) {
+        setSelectedDebugDetails(null);
+        return;
+      }
+      const details = resolveDebugDetails(debugRef);
+      if (details) {
+        setSelectedDebugDetails(details);
+      } else {
+        setSelectedDebugDetails({
+          missing: true,
+          note: "Нет свежих данных в буфере __DBG0__.",
+          debug_ref: debugRef,
+        });
+      }
+    },
+    [resolveDebugDetails]
+  );
+
+  const runJournalEntries = useMemo(() => {
     const infer = (role) => {
       if (role === "tool") return "tools";
-      if (role === "model") return "agent";
+      if (role === "model") return "call_model";
       return "";
     };
 
-    const out = [];
+    const entries = [];
     for (let i = 0; i < (runSteps?.length || 0); i++) {
       const m = runSteps[i] || {};
       const role = msgRoleLabel(m);
       const focus = infer(role);
-
-      out.push({
-        id: `msg-${i}`,
-        kind: "message",
-        role,
-        label: `${i + 1}. ${role}`,
+      entries.push({
+        id: `msg-run-${i}`,
+        ts: String(m?.ts || ""),
+        level: "info",
+        name: `message (${role})`,
+        message: m?.text || m?.content || `${role} step ${i}`,
+        origin: "run",
+        nodeId: focus,
+        spanId: m?.span_id ? String(m.span_id) : "",
         focusNodeId: focus,
       });
 
@@ -1002,18 +1205,217 @@ return null;
         for (let j = 0; j < toolCalls.length; j++) {
           const tc = toolCalls[j] || {};
           const name = tc?.name || tc?.function?.name || "tool";
-          out.push({
-            id: `tc-${i}-${j}`,
-            kind: "tool_call",
-            role: "tool_call",
-            label: `↳ tool_call: ${name}`,
+          entries.push({
+            id: `msg-tool-${i}-${j}`,
+            ts: String(tc?.ts || ""),
+            level: "info",
+            name: `tool_call: ${name}`,
+            message: tc?.status || "tool",
+            origin: "tools",
+            nodeId: "tools",
+            spanId: tc?.span_id ? String(tc.span_id) : "",
             focusNodeId: "tools",
           });
         }
       }
     }
-    return out;
+    return entries;
   }, [runSteps]);
+
+  const journalEvents = useMemo(() => {
+    const list = Array.isArray(debugEvents) ? debugEvents.slice(-120) : [];
+    const debugEntries = list.map((ev, idx) => {
+      const ctx = ev?.context && typeof ev.context === "object" ? ev.context : {};
+      const nodeId = ctx.node_id
+        ? String(ctx.node_id)
+        : ev?.node_id
+        ? String(ev.node_id)
+        : "";
+      const spanId = ctx.span_id
+        ? String(ctx.span_id)
+        : ev?.span_id
+        ? String(ev.span_id)
+        : "";
+      return {
+        id: `${String(ev?.event_id || idx)}-${idx}`,
+        ts: String(ev?.ts || ""),
+        level: String(ev?.level || ev?.severity || "info").toLowerCase(),
+        name: String(ev?.name || ev?.kind || "event"),
+        message: String(ev?.message || (ev?.payload && ev.payload.message) || ""),
+        origin: String(ev?.origin || "ui"),
+        runId: String(ctx.run_id || ev?.run_id || ""),
+        nodeId,
+        spanId,
+        focusNodeId: nodeId,
+        debugRef: ev?.debug_ref,
+      };
+    });
+    return [...debugEntries, ...runJournalEntries].reverse();
+  }, [debugEvents, runJournalEntries]);
+
+  const inspectorEvents = Array.isArray(inspectedNode?.info?.events)
+    ? inspectedNode.info.events.slice(-8).reverse()
+    : [];
+  const shortResult = inspectedNode?.info?.shortResult;
+  const shortError = inspectedNode?.info?.shortError;
+  const metadata = inspectedNode?.info?.metadata;
+  const diffSource = metadata?.state_diff ?? metadata ?? inspectedNode?.info?.diff ?? null;
+  const diffText = diffSource ? prettyJson(diffSource) : "";
+  const nodeInspectorPanel = (
+    <div className={`node-inspector ${inspectedNode ? "" : "node-inspector--empty"}`}>
+      {inspectedNode ? (
+        <>
+          <div className="node-inspector__title">
+            <span className="mono">node:{inspectedNode.nodeId}</span>
+            <Badge tone={
+              inspectedNode.info?.status === "done"
+                ? "good"
+                : inspectedNode.info?.status === "error"
+                ? "bad"
+                : inspectedNode.info?.status === "running"
+                ? "info"
+                : "neutral"
+            }>
+              {inspectedNode.info?.status || "idle"}
+            </Badge>
+          </div>
+          <div className="node-inspector__grid">
+            <div>
+              <span className="mono">tool</span>
+              <strong>{inspectedNode.info?.tool || inspectedNode.info?.tool_name || "—"}</strong>
+            </div>
+            <div>
+              <span className="mono">span</span>
+              <strong>{inspectedNode.info?.spanId || "—"}</strong>
+            </div>
+            <div>
+              <span className="mono">parent span</span>
+              <strong>{inspectedNode.info?.parentSpanId || "—"}</strong>
+            </div>
+            <div>
+              <span className="mono">started</span>
+              <strong>{formatTime(inspectedNode.info?.startedAt || inspectedNode.info?.startTs)}</strong>
+            </div>
+            <div>
+              <span className="mono">finished</span>
+              <strong>{formatTime(inspectedNode.info?.finishedAt)}</strong>
+            </div>
+            <div>
+              <span className="mono">duration</span>
+              <strong>
+                {formatDuration(
+                  inspectedNode.info?.duration ??
+                    (inspectedNode.info?.finishedAt && inspectedNode.info?.startedAt
+                      ? Number(inspectedNode.info.finishedAt) - Number(inspectedNode.info.startedAt)
+                      : undefined)
+                )}
+              </strong>
+            </div>
+          </div>
+          {inspectorCopyStatus ? (
+            <div className="node-inspector__copy-status">{inspectorCopyStatus}</div>
+          ) : null}
+          {shortResult ? (
+            <div className="node-inspector__copy-block">
+                <div className="node-inspector__copy-row">
+                  <span>short_result</span>
+                  <Tooltip tip="Скопировать результат" scope="viewport">
+                    <button
+                      type="button"
+                      className="node-inspector__copy-btn"
+                      onClick={() => copyInspectorValue(shortResult, "result")}
+                    >
+                      Copy
+                    </button>
+                  </Tooltip>
+                </div>
+              <pre className="node-inspector__copy-pre">{shortResult}</pre>
+            </div>
+          ) : null}
+          {shortError ? (
+            <div className="node-inspector__copy-block">
+                <div className="node-inspector__copy-row">
+                  <span>short_error</span>
+                  <Tooltip tip="Скопировать ошибку" scope="viewport">
+                    <button
+                      type="button"
+                      className="node-inspector__copy-btn"
+                      onClick={() => copyInspectorValue(shortError, "error")}
+                    >
+                      Copy
+                    </button>
+                  </Tooltip>
+                </div>
+              <pre className="node-inspector__copy-pre node-inspector__copy-pre--error">
+                {shortError}
+              </pre>
+            </div>
+          ) : null}
+          {diffText ? (
+            <div className="node-inspector__copy-block">
+                <div className="node-inspector__copy-row">
+                  <span>diff / metadata</span>
+                  <Tooltip tip="Скопировать JSON-дифф/metadata" scope="viewport">
+                    <button
+                      type="button"
+                      className="node-inspector__copy-btn"
+                      onClick={() => copyInspectorValue(diffSource, "diff/json")}
+                    >
+                      Copy diff/json
+                    </button>
+                  </Tooltip>
+                </div>
+              <pre className="node-inspector__copy-pre">{diffText}</pre>
+            </div>
+          ) : null}
+          {inspectorEvents.length ? (
+            <div className="node-inspector__block">
+              <Tooltip tip="node_start/node_end и tool_* события из журнала" scope="viewport">
+                <div className="hint">Связанные события</div>
+              </Tooltip>
+              <div className="node-inspector__events">
+                {inspectorEvents.map((ev, idx) => (
+                  <div className="node-inspector__event" key={ev.id || `${ev.name}-${idx}`}>
+                    <div className="node-inspector__event-title">
+                      <span className="mono">{formatTime(ev.ts)}</span>
+                      <strong>{ev.name}</strong>
+                      {ev.level ? (
+                        <span className="node-inspector__event-level">{ev.level}</span>
+                      ) : null}
+                    </div>
+                    <div className="node-inspector__event-message">
+                      {ev.message || "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {inspectedNode.info?.metadata ? (
+            <div className="node-inspector__meta">
+              <div className="hint">metadata</div>
+              <pre>{JSON.stringify(inspectedNode.info.metadata, null, 2)}</pre>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="mono" style={{ opacity: 0.7 }}>
+          Кликни на ноду, чтобы увидеть статус/инспектор.
+        </div>
+      )}
+    </div>
+  );
+
+  const formatJournalTime = useCallback((value) => {
+    if (!value) return "—";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return "—";
+    try {
+      return parsed.toLocaleTimeString("ru-RU", { hour12: false });
+    } catch {
+      return "—";
+    }
+  }, []);
 
   const tabs = useMemo(
     () => [
@@ -1055,6 +1457,35 @@ return null;
   const closePanel = (id) => {
     setOpenPanels((prev) => prev.filter((x) => x !== id));
   };
+
+  const handleDrawerResizeStart = useCallback((evt) => {
+    evt.preventDefault();
+    const startX = evt.clientX;
+    const startWidth = drawerWidthRef.current;
+
+    const onMove = (moveEvt) => {
+      const delta = moveEvt.clientX - startX;
+      const viewport = window.innerWidth;
+      const maxAllowed = Math.max(
+        DRAWER_MIN_WIDTH,
+        Math.min(
+          DRAWER_MAX_WIDTH,
+          viewport - RAIL_WIDTH - DRAWERS_GAP - MIN_MAIN_WIDTH
+        )
+      );
+      const raw = startWidth + delta;
+      const bounded = Math.min(maxAllowed, Math.max(DRAWER_MIN_WIDTH, raw));
+      setDrawerWidth(bounded);
+    };
+
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, []);
 
   const loadAssistants = useCallback(async () => {
     setAssistantErr("");
@@ -1540,7 +1971,10 @@ setReactUiStatus(null);
   );
 
   const drawers = (
-    <div className="drawers">
+    <div className="drawers" style={{ "--drawer-w": `${drawerWidth}px` }}>
+      <Tooltip tip="Изменить ширину панелей" scope="viewport">
+        <div className="drawers__resizer" onMouseDown={handleDrawerResizeStart} />
+      </Tooltip>
       {openPanels.map((id) => {
         if (id === "general") {
           return (
@@ -1896,66 +2330,155 @@ setReactUiStatus(null);
                   <span className="mono">agent/tools</span>).
                 </div>
 
+        <div
+          style={{
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 14,
+            background: "rgba(0,0,0,0.10)",
+            maxHeight: 520,
+            overflow: "auto",
+            padding: 8,
+            display: "grid",
+            gap: 6,
+          }}
+        >
+          {journalEvents.length === 0 ? (
+            <div className="hint">Пока нет событий. Запусти Run или Split.</div>
+          ) : (
+            journalEvents.map((entry) => {
+              const active =
+                entry.focusNodeId &&
+                String(entry.focusNodeId) === String(focusNodeId);
+              const label = entry.message || entry.name || "—";
+              const timeLabel = formatJournalTime(entry.ts);
+              return (
                 <div
+                  key={entry.id}
                   style={{
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 14,
-                    background: "rgba(0,0,0,0.10)",
-                    maxHeight: 520,
-                    overflow: "auto",
-                    padding: 8,
-                    display: "grid",
+                    border: active
+                      ? "1px solid rgba(185,200,230,0.4)"
+                      : "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: 10,
+                    padding: "8px 10px",
+                    background: active
+                      ? "rgba(185,200,230,0.04)"
+                      : "rgba(255,255,255,0.02)",
+                    display: "flex",
+                    flexDirection: "column",
                     gap: 6,
                   }}
                 >
-                  {journalEvents.length === 0 ? (
-                    <div className="hint">Пока пусто — запусти Run.</div>
-                  ) : (
-                    journalEvents.map((ev) => {
-                      const active =
-                        ev.focusNodeId &&
-                        String(ev.focusNodeId) === String(focusNodeId);
-                      return (
-                        <button
-                          key={ev.id}
-                          type="button"
-                          className="secondary-btn"
-                          onClick={() =>
-                            ev.focusNodeId && setFocusNodeId(String(ev.focusNodeId))
-                          }
-                          style={{
-                            textAlign: "left",
-                            justifyContent: "flex-start",
-                            gap: 8,
-                            background: active
-                              ? "rgba(185,200,230,0.10)"
-                              : undefined,
-                            borderColor: active
-                              ? "rgba(185,200,230,0.28)"
-                              : undefined,
-                          }}
-                        >
-                          <span className="mono" style={{ opacity: 0.85 }}>
-                            {ev.kind === "tool_call" ? "tool" : ev.role}
-                          </span>
-                          <span className="mono" style={{ opacity: 0.95 }}>
-                            {ev.label}
-                          </span>
-                          <span
-                            className="mono"
-                            style={{ marginLeft: "auto", opacity: 0.65 }}
-                          >
-                            {ev.focusNodeId || "—"}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <span className="mono" style={{ fontSize: 11, opacity: 0.7 }}>
+                      {entry.level.toUpperCase()}
+                    </span>
+                    <span className="mono" style={{ fontSize: 11, opacity: 0.6 }}>
+                      {timeLabel}
+                    </span>
+                    <span className="mono" style={{ fontSize: 11, opacity: 0.6 }}>
+                      {entry.origin}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{label}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {entry.nodeId ? (
+                      <span className="mono" style={{ fontSize: 11 }}>
+                        node: {entry.nodeId}
+                      </span>
+                    ) : null}
+                    {entry.spanId ? (
+                      <span className="mono" style={{ fontSize: 11, opacity: 0.75 }}>
+                        span: {entry.spanId}
+                      </span>
+                    ) : null}
+                    {entry.runId ? (
+                      <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>
+                        run: {entry.runId}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() =>
+                        entry.focusNodeId &&
+                        setFocusNodeId(String(entry.focusNodeId))
+                      }
+                      disabled={!entry.focusNodeId}
+                      style={{ padding: "4px 10px", fontSize: 11 }}
+                    >
+                      Jump to node
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-btn"
+                      onClick={() => entry.debugRef && showDebugDetails(entry.debugRef)}
+                      disabled={!entry.debugRef}
+                      style={{ padding: "4px 10px", fontSize: 11 }}
+                    >
+                      Details
+                    </button>
+                  </div>
                 </div>
+              );
+            })
+          )}
+          {selectedDebugDetails ? (
+            <div
+              style={{
+                marginTop: 12,
+                borderTop: "1px solid rgba(255,255,255,0.12)",
+                paddingTop: 10,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <span className="mono" style={{ fontSize: 11, opacity: 0.7 }}>
+                  Debug details
+                </span>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  onClick={() => setSelectedDebugDetails(null)}
+                  style={{ padding: "4px 10px", fontSize: 11 }}
+                >
+                  Close
+                </button>
               </div>
-            </PanelShell>
-          );
-        }
+              <pre
+                style={{
+                  maxHeight: 200,
+                  overflow: "auto",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 10,
+                  padding: 10,
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                }}
+              >
+                {JSON.stringify(selectedDebugDetails, null, 2)}
+              </pre>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </PanelShell>
+  );
+}
 
         if (id === "tools") {
           return (
@@ -2434,13 +2957,15 @@ setReactUiStatus(null);
                 </div>
               }
               right={
-                <div className="graph-host">
-                  <GraphView
-                    assistantId={assistantId}
-                    focusNodeId={focusNodeId}
-                    onNodeSelected={setFocusNodeId}
-                  />
-                </div>
+              <div className="graph-host">
+                <GraphView
+                  assistantId={assistantId}
+                  focusNodeId={focusNodeId}
+                  onNodeSelected={setFocusNodeId}
+                  onInspectNode={handleInspectNode}
+                />
+                {nodeInspectorPanel}
+              </div>
               }
             />
           )}
@@ -2451,7 +2976,9 @@ setReactUiStatus(null);
                 assistantId={assistantId}
                 focusNodeId={focusNodeId}
                 onNodeSelected={setFocusNodeId}
+                onInspectNode={handleInspectNode}
               />
+              {nodeInspectorPanel}
             </div>
           )}
 

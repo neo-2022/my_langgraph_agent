@@ -1253,6 +1253,22 @@ return null;
     return [...debugEntries, ...runJournalEntries].reverse();
   }, [debugEvents, runJournalEntries]);
 
+  const inspectorLabelHints = {
+    tool:
+      "Инструмент/модель, которой принадлежит этот узел.",
+    span: "Уникальный span_id детализирует вызов в трассировке.",
+    "parent span": "span_id узла-родителя (если узел вложенный).",
+    started: "Время начала узла (локальное/серверное).",
+    finished: "Время закрытия узла.",
+    duration: "Продолжительность работы узла/инструмента.",
+  };
+
+  const wrapLabel = (label, desc, children) => (
+    <Tooltip tip={desc} scope="viewport">
+      <div>{children}</div>
+    </Tooltip>
+  );
+
   const inspectorEvents = Array.isArray(inspectedNode?.info?.events)
     ? inspectedNode.info.events.slice(-8).reverse()
     : [];
@@ -1280,37 +1296,32 @@ return null;
             </Badge>
           </div>
           <div className="node-inspector__grid">
-            <div>
-              <span className="mono">tool</span>
-              <strong>{inspectedNode.info?.tool || inspectedNode.info?.tool_name || "—"}</strong>
-            </div>
-            <div>
-              <span className="mono">span</span>
-              <strong>{inspectedNode.info?.spanId || "—"}</strong>
-            </div>
-            <div>
-              <span className="mono">parent span</span>
-              <strong>{inspectedNode.info?.parentSpanId || "—"}</strong>
-            </div>
-            <div>
-              <span className="mono">started</span>
-              <strong>{formatTime(inspectedNode.info?.startedAt || inspectedNode.info?.startTs)}</strong>
-            </div>
-            <div>
-              <span className="mono">finished</span>
-              <strong>{formatTime(inspectedNode.info?.finishedAt)}</strong>
-            </div>
-            <div>
-              <span className="mono">duration</span>
-              <strong>
-                {formatDuration(
+            {[
+              ["tool", inspectedNode.info?.tool || inspectedNode.info?.tool_name || "—"],
+              ["span", inspectedNode.info?.spanId || "—"],
+              ["parent span", inspectedNode.info?.parentSpanId || "—"],
+              [
+                "started",
+                formatTime(inspectedNode.info?.startedAt || inspectedNode.info?.startTs),
+              ],
+              ["finished", formatTime(inspectedNode.info?.finishedAt)],
+              [
+                "duration",
+                formatDuration(
                   inspectedNode.info?.duration ??
                     (inspectedNode.info?.finishedAt && inspectedNode.info?.startedAt
                       ? Number(inspectedNode.info.finishedAt) - Number(inspectedNode.info.startedAt)
                       : undefined)
-                )}
-              </strong>
-            </div>
+                ),
+              ],
+            ].map(([label, value]) => (
+              <Tooltip key={label} tip={inspectorLabelHints[label]} scope="viewport">
+                <div>
+                  <span className="mono">{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              </Tooltip>
+            ))}
           </div>
           {inspectorCopyStatus ? (
             <div className="node-inspector__copy-status">{inspectorCopyStatus}</div>

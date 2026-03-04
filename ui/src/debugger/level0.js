@@ -380,12 +380,17 @@ export function initDebuggerLevel0() {
     return () => state.listeners.error.delete(fn);
   }
 
-  function debugEventToRaw(ev) {
+function debugEventToRaw(ev) {
     const payload = ev.payload && typeof ev.payload === "object" ? { ...ev.payload } : {};
     const ctx = ev.ctx && typeof ev.ctx === "object" ? { ...ev.ctx } : {};
+    const links = Array.isArray(ev.links) ? ev.links.filter(Boolean) : undefined;
+    const trace_id = toStr(ev.trace_id);
+    const span_id = toStr(ev.span_id);
+    const event_id = toStr(ev.event_id) || genId("ev");
+    const debug_ref = ev.debug_ref || (span_id ? { event_id, span_id } : undefined);
     return {
       schema_version: "REGART.Art.RawEvent.v1",
-      event_id: ev.event_id,
+      event_id,
       kind: toStr(ev.name) || "ui.event",
       scope: toStr(ev.origin || ev.ui?.tab || "ui"),
       severity: ["debug", "info", "warn", "error", "fatal"].includes(toStr(ev.level)) ? toStr(ev.level) : "info",
@@ -396,7 +401,10 @@ export function initDebuggerLevel0() {
         span_id: toStr(ev.span_id),
         run_id: toStr(ev.run_id),
         node_id: toStr(ev.node_id),
+        parent_span_id: toStr(ev.parent_span_id),
       },
+      links,
+      debug_ref,
     };
   }
 

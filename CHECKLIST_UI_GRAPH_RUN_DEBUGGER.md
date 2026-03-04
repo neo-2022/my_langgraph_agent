@@ -170,7 +170,7 @@
 События приходят **уже в порядке времени** (UI не сортирует).
 
 - #### 2.2.1 Расширение контракта (оптимально, без хардкода)
-- [x] `trace_id`, `span_id`, `parent_span_id`, `run_id`, `assistant_id`, `node_id`, `attrs`, `payload` уже записываются (`ui/src/debugger/level0.js` `pushEvent`).
+- [x] `trace_id`, `span_id`, `parent_span_id`, `run_id`, `assistant_id`, `node_id`, `attrs`, `payload`, `links` и `debug_ref` уже записываются (`ui/src/debugger/level0.js` `pushEvent`).
 - [ ] UI не угадывает `node_id`: Jump возможен только если `node_id`/`span_id` есть в событии.
 - [ ] Событие может содержать `debug_ref` (event_id/span_id) для подгрузки Details из Debugger Core (без дубляжа данных).
 

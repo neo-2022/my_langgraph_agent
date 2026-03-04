@@ -146,12 +146,10 @@
 - [x] Graph only — `App.jsx` монтирует `<GraphView>` и `GraphView.jsx` вызывает `loadGraph()` в `useEffect` при mount/assistantId/direction, так что граф загружается/отрисовывается автоматически (багов “пустой граф” нет).
 - [x] Split (Run + Graph) — `<SplitView>` содержит Graph в правой панели, `loadGraph` вызывается из того же компонента, `splitMode`/splitter сохраняются в localStorage; после переключения Run↔Split/ресайза/запуска Graph подхватывает ноды без ручного обновления.
 
-### 1.2 Split UX
-- [ ] Draggable splitter (перетаскивание ширины панелей)
-- [ ] min-width: Run >= 360px, Graph >= 420px
-- [ ] Сохранять в localStorage:
-  - [ ] режим (run/graph/split)
-  - [ ] ширину панелей (split)
+- ### 1.2 Split UX
+- [x] Draggable splitter реализован (`ui/src/SplitView.jsx` drag handlers).
+- [x] Вспомогательные min-width (Run 360px, Graph 420px) добавлены в SplitView на панели и single mode.
+- [x] Split mode + tab режим сохраняются в `localStorage` (`splitview:mode`, `splitview:tab`, `splitview:left_pct`).
 
 ### 1.3 Навигация Journal ↔ Graph (MVP)
 - [ ] Клик по событию в журнале → центрировать граф на соответствующей ноде/span

@@ -102,7 +102,7 @@ export default function SplitView({
   return (
     <div className="sv" ref={rootRef}>
       {mode === "run" ? (
-        <div className="sv__single">{left}</div>
+        <div className="sv__single" style={{ minWidth: 360 }}>{left}</div>
       ) : isNarrow ? (
         <div className="sv__stack">
           <div className="sv__stack-pane">{left}</div>
@@ -117,6 +117,7 @@ export default function SplitView({
               flexBasis: `${leftPct}%`,
               flexGrow: 0,
               flexShrink: 0,
+              minWidth: 360,
             }}
           >
             {left}
@@ -142,6 +143,7 @@ export default function SplitView({
               flexBasis: `${100 - leftPct}%`,
               flexGrow: 0,
               flexShrink: 0,
+              minWidth: 420,
             }}
           >
             {right}

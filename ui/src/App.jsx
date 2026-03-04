@@ -717,8 +717,17 @@ function prettyJson(obj) {
   }
 }
 
+const getInitialTab = () => {
+  if (typeof window === "undefined") return "run";
+  try {
+    return localStorage.getItem("splitview:tab") || "run";
+  } catch {
+    return "run";
+  }
+};
+
 export default function App() {
-  const [tab, setTab] = useState("run");
+  const [tab, setTab] = useState(getInitialTab);
 
   // SplitView:
   // - хранится в localStorage
@@ -744,6 +753,12 @@ export default function App() {
       setSplitMode("run");
     }
     prevTabRef.current = tab;
+  }, [tab]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("splitview:tab", tab);
+    } catch {}
   }, [tab]);
 
   const [focusNodeId, setFocusNodeId] = useState("");

@@ -2,12 +2,16 @@ import asyncio
 import contextlib
 import json
 import logging
+import ssl
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict
 from typing import Dict
 
 import httpx
+import logging
 import pytest
 
 from react_agent import ui_proxy
@@ -23,6 +27,47 @@ def _sample_event(event_id: str) -> dict:
         "severity": "info",
         "message": "payload",
     }
+
+
+@contextlib.asynccontextmanager
+async def _mock_art_tls_server(handler):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        cert_path = Path(tmp_dir) / "cert.pem"
+        key_path = Path(tmp_dir) / "key.pem"
+        subprocess.run(
+            [
+                "openssl",
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-keyout",
+                str(key_path),
+                "-out",
+                str(cert_path),
+                "-days",
+                "1",
+                "-nodes",
+                "-subj",
+                "/CN=127.0.0.1",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_ctx.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+        server = await asyncio.start_server(handler, "127.0.0.1", 0, ssl=ssl_ctx)
+        port = server.sockets[0].getsockname()[1]
+        task = asyncio.create_task(server.serve_forever())
+        try:
+            yield port
+        finally:
+            server.close()
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            await server.wait_closed()
 
 
 @pytest.fixture
@@ -95,6 +140,69 @@ async def test_timeout_spools_events_for_later_replay(proxied_client, monkeypatc
 
 
 @pytest.mark.anyio
+async def test_never_drop_unacked_rejects_new(monkeypatch, proxied_client):
+    client, spool = proxied_client
+    monkeypatch.setenv("UI_PROXY_SPOOL_MAX_EVENTS", "1")
+    monkeypatch.setenv("UI_PROXY_SPOOL_OVERFLOW_POLICY", "never_drop_unacked")
+
+    async def timeout_forward(evts, client_id, correlation_headers=None):
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", timeout_forward)
+
+    response1 = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("overflow-1")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response1.status_code == 504
+
+    response2 = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("overflow-2")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response2.status_code == 507
+    assert response2.json()["error"] == "spool_full"
+
+
+@pytest.mark.anyio
+async def test_drop_oldest_when_full_logs_lossy(monkeypatch, proxied_client, caplog):
+    caplog.set_level(logging.WARNING, logger="react_agent.spool")
+    client, spool = proxied_client
+    monkeypatch.setenv("UI_PROXY_SPOOL_MAX_EVENTS", "1")
+    monkeypatch.setenv("UI_PROXY_SPOOL_OVERFLOW_POLICY", "drop_oldest_when_full")
+
+    async def timeout_forward(evts, client_id, correlation_headers=None):
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", timeout_forward)
+
+    response1 = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("drop-1")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response1.status_code == 504
+
+    response2 = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("drop-2")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response2.status_code == 504
+
+    conn = await spool._connection()
+    cursor = await conn.execute("SELECT event_id FROM spool_events ORDER BY id ASC")
+    rows = await cursor.fetchall()
+    assert rows and rows[0][0] == "drop-2"
+
+    warnings = [rec.message for rec in caplog.records if "lossy_mode_active" in rec.message or "data_quality.lossy" in rec.message]
+    assert any("lossy_mode_active" in msg for msg in warnings)
+    assert any("data_quality.lossy" in msg for msg in warnings)
+
+
+@pytest.mark.anyio
 async def test_art_ingest_preserves_correlation_headers(monkeypatch, proxied_client):
     client, _ = proxied_client
     seen_headers: Dict[str, str] = {}
@@ -115,10 +223,7 @@ async def test_art_ingest_preserves_correlation_headers(monkeypatch, proxied_cli
         writer.close()
         await writer.wait_closed()
 
-    server = await asyncio.start_server(handler, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    server_task = asyncio.create_task(server.serve_forever())
-    monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"http://127.0.0.1:{port}/api/v1/ingest")
+    monkeypatch.setattr(ui_proxy, "ART_TLS_VERIFY", False)
 
     headers = {
         "x-trace-id": "trace-corr",
@@ -126,14 +231,9 @@ async def test_art_ingest_preserves_correlation_headers(monkeypatch, proxied_cli
         "x-request-id": "req-corr",
         "x-client-id": "test-client",
     }
-    try:
+    async with _mock_art_tls_server(handler) as port:
+        monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"https://127.0.0.1:{port}/api/v1/ingest")
         response = await client.post("/ui/art/ingest", json={"events": events}, headers=headers)
-    finally:
-        server.close()
-        server_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await server_task
-        await server.wait_closed()
 
     assert response.status_code == 200
     assert seen_headers.get("x-trace-id") == "trace-corr"
@@ -397,19 +497,11 @@ async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):
         writer.close()
         await writer.wait_closed()
 
-    server = await asyncio.start_server(slow_handler, "127.0.0.1", 0)
-    port = server.sockets[0].getsockname()[1]
-    server_task = asyncio.create_task(server.serve_forever())
-    monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"http://127.0.0.1:{port}/api/v1/ingest")
+    monkeypatch.setattr(ui_proxy, "ART_TLS_VERIFY", False)
 
-    try:
+    async with _mock_art_tls_server(slow_handler) as port:
+        monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"https://127.0.0.1:{port}/api/v1/ingest")
         response = await client.post("/ui/art/ingest", json={"events": events}, headers={"x-client-id": "test-client"})
-    finally:
-        server.close()
-        server_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await server_task
-        await server.wait_closed()
 
     assert response.status_code == 504
     results = response.json().get("results", [])
@@ -419,3 +511,128 @@ async def test_art_read_timeout_respects_policy(monkeypatch, proxied_client):
     pending_cursor = await conn.execute("SELECT COUNT(*) FROM spool_events")
     pending = await pending_cursor.fetchone()
     assert pending[0] == len(events)
+
+
+@pytest.mark.anyio
+async def test_art_ingest_https_only_rejects_http(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    monkeypatch.setattr(ui_proxy, "ART_ALLOW_HTTP_LOCAL", False)
+    monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", "http://127.0.0.1:7331/api/v1/ingest")
+    response = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("http-blocked-1")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response.status_code == 500
+    assert "https://" in response.json().get("detail", "")
+
+
+@pytest.mark.anyio
+async def test_art_ingest_http_local_allowed(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    monkeypatch.setattr(ui_proxy, "ART_ALLOW_HTTP_LOCAL", True)
+
+    async def handler(reader, writer):
+        await reader.read(65536)
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 24\r\n\r\n{\"ok\":true,\"results\":[]}"
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    server_task = asyncio.create_task(server.serve_forever())
+    monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"http://127.0.0.1:{port}/api/v1/ingest")
+
+    try:
+        response = await client.post(
+            "/ui/art/ingest",
+            json={"events": [_sample_event("http-local-allowed-1")]},
+            headers={"x-client-id": "test-client", "x-trace-id": "trace-http-local"},
+        )
+    finally:
+        server.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.wait_closed()
+
+    assert response.status_code == 200
+    assert response.json().get("ok") is True
+
+
+@pytest.mark.anyio
+async def test_art_ingest_tls_smoke_self_signed(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    monkeypatch.setattr(ui_proxy, "ART_TLS_VERIFY", False)
+
+    async def handler(reader, writer):
+        await reader.read(65536)
+        writer.write(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 24\r\n\r\n{\"ok\":true,\"results\":[]}"
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async with _mock_art_tls_server(handler) as port:
+        monkeypatch.setattr(ui_proxy, "ART_INGEST_URL", f"https://127.0.0.1:{port}/api/v1/ingest")
+        response = await client.post(
+            "/ui/art/ingest",
+            json={"events": [_sample_event("tls-smoke-1")]},
+            headers={"x-client-id": "test-client", "x-trace-id": "trace-tls"},
+        )
+    assert response.status_code == 200
+    assert response.json().get("ok") is True
+
+
+@pytest.mark.anyio
+async def test_upstream_error_format_contains_required_fields(monkeypatch, proxied_client):
+    client, _ = proxied_client
+    events = [_sample_event("upstream-1")]
+
+    async def request_error(_events, _client_id, _correlation_headers=None):
+        raise httpx.RequestError("network broken")
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", request_error)
+    response = await client.post(
+        "/ui/art/ingest",
+        json={"events": events},
+        headers={"x-client-id": "test-client", "x-trace-id": "trace-upstream"},
+    )
+    assert response.status_code == 502
+    upstream_error = response.json().get("upstream_error", {})
+    assert upstream_error.get("kind") == "upstream_error"
+    assert upstream_error.get("trace_id") == "trace-upstream"
+    assert upstream_error.get("retry_count") == 0
+    for field in ("what", "where", "why", "actions", "evidence"):
+        assert field in upstream_error
+
+
+@pytest.mark.anyio
+async def test_retry_count_present_and_non_negative(monkeypatch, proxied_client):
+    client, _ = proxied_client
+
+    async def timeout_forward(_events, _client_id, _correlation_headers=None):
+        raise httpx.TimeoutException("timeout")
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", timeout_forward)
+    response = await client.post(
+        "/ui/art/ingest",
+        json={"events": [_sample_event("retry-count-1")]},
+        headers={"x-client-id": "test-client"},
+    )
+    assert response.status_code == 504
+    retry_item = response.json().get("results", [])[0]
+    assert int(retry_item.get("retry_count", -1)) >= 0
+
+
+@pytest.mark.anyio
+async def test_audit_immutability_append_only(monkeypatch, proxied_client, caplog):
+    caplog.set_level(logging.WARNING, logger="react_agent.spool")
+    _client, spool = proxied_client
+    ok = await spool.verify_audit_immutability()
+    assert ok is True
+    assert "observability_gap.audit_tampering" in caplog.text

@@ -160,7 +160,8 @@ export class UiErrorCore {
     this.capacity = Math.max(10, Number(opts.capacity || 200));
     this._local = new LocalBuf(this.capacity);
 
-    this._unsub = null;
+    this._unsubErrors = null;
+    this._unsubEvents = null;
     this._hasL0 = false;
 
     // если Level0 уже есть — подключаемся сразу
@@ -173,22 +174,32 @@ export class UiErrorCore {
 
   _attachLevel0() {
     const l0 = this._getL0();
-    const sub = l0 && typeof l0.subscribeErrors === "function";
-    if (!l0 || !sub) {
+    const hasErrorSub = l0 && typeof l0.subscribeErrors === "function";
+    const hasEventSub = l0 && typeof l0.subscribeEvents === "function";
+    if (!l0 || !hasErrorSub || !hasEventSub) {
       this._hasL0 = false;
       return;
     }
 
-    if (this._unsub) return;
+    if (this._unsubErrors && this._unsubEvents) return;
 
     this._hasL0 = true;
 
     // Прокидываем события Level0 -> подписчики Level1
-    this._unsub = l0.subscribeErrors((err) => {
+    this._unsubErrors = l0.subscribeErrors((err) => {
       // локально не сохраняем как источник правды; только нотификация
       for (const fn of this._local.listeners) {
         try {
           fn(err, this.stats());
+        } catch {}
+      }
+    });
+
+    // По контракту subscribe(listener) получает и ошибки, и DebugEvent.
+    this._unsubEvents = l0.subscribeEvents((ev) => {
+      for (const fn of this._local.listeners) {
+        try {
+          fn(ev, this.stats());
         } catch {}
       }
     });

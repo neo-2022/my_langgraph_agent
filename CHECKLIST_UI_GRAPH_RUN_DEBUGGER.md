@@ -88,10 +88,11 @@
 
 **A) Debugger Core (фон, всегда включён)**
 - [x] Core стартует первым и собирает события/ошибки в ring-buffer (errors/breadcrumbs/network/snapshots). Все методы (`pushError/pushEvent/pushSnapshot`) реализованы в `ui/src/debugger/core.js`.
-  - [ ] subscribe(listener) для UI панели
+  - [x] subscribe(listener) для UI панели (UiError + DebugEvent, после нормализации; порядок без пропусков подтвержден unit-тестом `tests/debugger_core.spec.js`)
 - [ ] Core делает dedupe + throttle (без спама), как описано в 1.0.4.
 
 **B) Единый формат событий (DebugEvent) и корреляция (без хардкода)**
+- [x] `DebugEvent` содержит обязательный `trace_id`: если входящий `trace_id` отсутствует, Level0 генерирует новый UUID/fallback-id и сохраняет его в raw payload (`ui/src/debugger/level0.js`). Проверка: `npm -C ui test -- --run tests/debugger_trace_id.spec.js` + `npm -C ui test -- --run tests/outbox.spec.js`.
 - [ ] Ввести формат `DebugEvent` (дополнение к UiError, для событий/трейса):
   - [ ] `event_id`, `ts`, `level`, `name`, `origin`
   - [ ] корреляция: `trace_id`, `span_id`, `parent_span_id?`, `run_id?`, `assistant_id?`, `node_id?`

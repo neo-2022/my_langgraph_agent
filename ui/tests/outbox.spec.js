@@ -99,4 +99,18 @@ describe("Outbox", () => {
       expect.objectContaining({ name: "observability_gap.dlq_enqueued" }),
     );
   });
+
+  it("preserves trace_id in payload sent to /ui/art/ingest", async () => {
+    const traceId = "trace-preserve-001";
+    await outbox.enqueue({
+      kind: "ui.trace",
+      message: "trace flow",
+      context: { trace_id: traceId, span_id: "span-1" },
+    });
+    await outbox.flush();
+    expect(sendBatch).toHaveBeenCalledTimes(1);
+    const sentEvent = sendBatch.mock.calls[0][0].events[0];
+    expect(sentEvent.context.trace_id).toBe(traceId);
+    expect(sentEvent.context.span_id).toBe("span-1");
+  });
 });

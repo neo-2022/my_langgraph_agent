@@ -40,6 +40,11 @@ export function initDebuggerLevel0() {
     return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
 
+  function ensureTraceId(value) {
+    const fromEvent = toStr(value).trim();
+    return fromEvent || genId("trace");
+  }
+
   function safeJson(v) {
     try {
       return JSON.stringify(v, null, 2);
@@ -384,7 +389,7 @@ function debugEventToRaw(ev) {
     const payload = ev.payload && typeof ev.payload === "object" ? { ...ev.payload } : {};
     const ctx = ev.ctx && typeof ev.ctx === "object" ? { ...ev.ctx } : {};
     const links = Array.isArray(ev.links) ? ev.links.filter(Boolean) : undefined;
-    const trace_id = toStr(ev.trace_id);
+    const trace_id = ensureTraceId(ev.trace_id);
     const span_id = toStr(ev.span_id);
     const event_id = toStr(ev.event_id) || genId("ev");
     const debug_ref = ev.debug_ref || (span_id ? { event_id, span_id } : undefined);
@@ -397,7 +402,7 @@ function debugEventToRaw(ev) {
       message: toStr(ev.message) || toStr(ev.name),
       payload: { ...payload, ui: ev.ui, ctx },
       context: {
-        trace_id: toStr(ev.trace_id),
+        trace_id,
         span_id: toStr(ev.span_id),
         run_id: toStr(ev.run_id),
         node_id: toStr(ev.node_id),
@@ -416,6 +421,7 @@ function debugEventToRaw(ev) {
 
   function pushEvent(ev) {
     const e = ev && typeof ev === "object" ? ev : { name: "ui.event", payload: ev };
+    const trace_id = ensureTraceId(e.trace_id);
     const out = {
       schema_version: "debug_event@1",
       event_id: toStr(e.event_id) || genId("ev"),
@@ -424,7 +430,7 @@ function debugEventToRaw(ev) {
       level: toStr(e.level) || "info",
       name: toStr(e.name) || "ui.event",
       origin: toStr(e.origin) || "frontend",
-      trace_id: toStr(e.trace_id) || undefined,
+      trace_id,
       span_id: toStr(e.span_id) || undefined,
       parent_span_id: toStr(e.parent_span_id) || undefined,
       run_id: toStr(e.run_id) || undefined,

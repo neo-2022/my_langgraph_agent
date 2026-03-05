@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 import shlex
 import sqlite3
 import subprocess
@@ -31,6 +32,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -41,19 +43,23 @@ from pydantic import ValidationError
 
 from react_agent.context import Context
 from react_agent.obs_models import RawEventModel
-from react_agent.spool import spool
+from react_agent.spool import SpoolOverflowError, spool
 from react_agent.tools import probe_tool_calls, probe_all_models_tool_calls
 
 
 LANGGRAPH_BASE_URL = os.environ.get("LANGGRAPH_BASE_URL", "http://127.0.0.1:2024")
-ART_INGEST_URL = os.environ.get("ART_INGEST_URL", "http://127.0.0.1:7331/api/v1/ingest")
-ART_STREAM_URL = os.environ.get("ART_STREAM_URL", "http://127.0.0.1:7331/api/v1/stream")
+ART_INGEST_URL = os.environ.get("ART_INGEST_URL", "https://127.0.0.1:7331/api/v1/ingest")
+ART_STREAM_URL = os.environ.get("ART_STREAM_URL", "https://127.0.0.1:7331/api/v1/stream")
+ART_ACTIONS_URL = os.environ.get("ART_ACTIONS_URL", "https://127.0.0.1:7331/api/v1/actions/execute")
+ART_ACTIONS_TOKEN = os.environ.get("ART_ACTIONS_TOKEN", "")
+ART_TLS_VERIFY = os.environ.get("ART_TLS_VERIFY", "1").lower() not in {"0", "false", "no", "off"}
+ART_ALLOW_HTTP_LOCAL = os.environ.get("ART_ALLOW_HTTP_LOCAL", "1").lower() not in {"0", "false", "no", "off"}
 ART_CONNECT_TIMEOUT = float(os.environ.get("ART_CONNECT_TIMEOUT", "3"))
 ART_READ_TIMEOUT = float(os.environ.get("ART_READ_TIMEOUT", "10"))
 ART_WRITE_TIMEOUT = float(os.environ.get("ART_WRITE_TIMEOUT", "10"))
 PROXY_HOST = os.environ.get("UI_PROXY_HOST", "127.0.0.1")
 PROXY_PORT = int(os.environ.get("UI_PROXY_PORT", "8090"))
-REACT_PORT = int(os.environ.get("REACT_PORT", "5174"))
+REACT_PORT = int(os.environ.get("REACT_PORT", "5175"))
 UI_PROXY_PORT = PROXY_PORT
 CLIENT_ID_KEY = "UI_CLIENT_ID"
 INGEST_BEARER_TOKEN = os.environ.get("REGART_INGEST_TOKEN", "")
@@ -309,16 +315,84 @@ def _results_retry(events: Iterable[Dict[str, Any]], reason: str) -> List[Dict[s
             "event_id": ev.get("event_id"),
             "status": "retryable",
             "reason": reason,
+            "retry_count": max(0, int(ev.get("retry_count", 0) or 0)),
         }
         for ev in events
     ]
 
 
+def _is_local_art_host(hostname: Optional[str]) -> bool:
+    return (hostname or "").lower() in {"127.0.0.1", "localhost", "::1"}
+
+
+def _assert_https_url(url: str, field: str) -> None:
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme == "https":
+        return
+    if scheme == "http" and ART_ALLOW_HTTP_LOCAL and _is_local_art_host(parsed.hostname):
+        logger.warning(f"observability_gap.art_transport.http_local_allowed: {field}={url}")
+        return
+    raise HTTPException(
+        status_code=500,
+        detail=f"{field} must use https:// (http:// allowed only for localhost when ART_ALLOW_HTTP_LOCAL=1)",
+    )
+
+
+def _ensure_art_tls_config() -> None:
+    _assert_https_url(ART_INGEST_URL, "ART_INGEST_URL")
+    _assert_https_url(ART_STREAM_URL, "ART_STREAM_URL")
+    _assert_https_url(ART_ACTIONS_URL, "ART_ACTIONS_URL")
+
+
+def _build_upstream_error_event(
+    *,
+    trace_id: str,
+    where: str,
+    why: str,
+    what: str,
+    evidence: Dict[str, Any],
+    retry_count: int = 0,
+    actions: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    return {
+        "schema_version": "REGART.Art.RawEvent.v1",
+        "kind": "upstream_error",
+        "trace_id": trace_id,
+        "retry_count": max(0, int(retry_count)),
+        "what": what,
+        "where": where,
+        "why": why,
+        "actions": actions or ["retry", "inspect_ui_proxy_logs"],
+        "evidence": evidence,
+    }
+
+
 async def _spool_events(events: Iterable[Dict[str, Any]], client_id: str, reason: str) -> None:
     try:
         await spool.add_events(events, client_id)
+    except SpoolOverflowError as exc:
+        logger.warning(f"observability_gap.spool_full: {exc}")
+        logger.warning(f"observability_gap.outbox_full: {exc}")
+        raise
     except sqlite3.DatabaseError as exc:
         logger.exception("spool failure during snapshot: %s", exc)
+
+
+async def _safe_spool_events(events: Iterable[Dict[str, Any]], client_id: str, reason: str) -> Optional[JSONResponse]:
+    try:
+        await _spool_events(events, client_id, reason)
+    except SpoolOverflowError as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "spool_full",
+                "reason": str(exc),
+                "results": _results_retry(events, "spool_full"),
+            },
+            status_code=507,
+        )
+    return None
 
 
 def _collect_correlation_headers(request: Request) -> Dict[str, str]:
@@ -545,10 +619,11 @@ async def _forward_to_art(
     client_id: str,
     correlation_headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
+    _ensure_art_tls_config()
     if not events:
         return {"ok": True, "results": []}
     envelope = _build_art_envelope(events, client_id)
-    async with httpx.AsyncClient(timeout=_build_art_timeout()) as client:
+    async with httpx.AsyncClient(timeout=_build_art_timeout(), verify=ART_TLS_VERIFY) as client:
         headers = {"X-Client-Id": client_id}
         if correlation_headers:
             headers.update(correlation_headers)
@@ -620,21 +695,45 @@ async def _forward_to_provider(
 
 # ---------- systemd helpers ----------
 
+def _build_action_headers() -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if ART_ACTIONS_TOKEN:
+        headers["Authorization"] = f"Bearer {ART_ACTIONS_TOKEN}"
+    return headers
+
+
+def _call_art_action(action_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    _ensure_art_tls_config()
+    payload = {"action": action_name, "params": params}
+    headers = _build_action_headers()
+    try:
+        response = httpx.post(
+            ART_ACTIONS_URL,
+            json=payload,
+            headers=headers,
+            timeout=10.0,
+            verify=ART_TLS_VERIFY,
+        )
+        response.raise_for_status()
+        body = response.json()
+        return {"ok": True, "result": body}
+    except httpx.HTTPStatusError as exc:
+        msg = str(exc)
+        logger.warning(f"observability_gap.actions.failure: {action_name} {payload} {msg}")
+        return {"ok": False, "error": msg}
+    except Exception as exc:
+        msg = str(exc)
+        logger.warning(f"observability_gap.actions.failure: {action_name} {payload} {msg}")
+        return {"ok": False, "error": msg}
+
+
 def _systemd_user_action(action: str, service: str) -> Dict[str, Any]:
     if not service:
         return {"ok": False, "error": "Имя systemd-сервиса не задано"}
-    try:
-        r = subprocess.run(
-            ["systemctl", "--user", action, service],
-            text=True,
-            capture_output=True,
-        )
-        if r.returncode != 0:
-            msg = (r.stderr or r.stdout or "").strip()
-            return {"ok": False, "error": msg or f"systemctl --user {action} {service} не удался"}
+    resp = _call_art_action("service_control", {"service": service, "command": action})
+    if resp.get("ok"):
         return {"ok": True}
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
+    return {"ok": False, "error": resp.get("error", f"action failed for {service}")}
 
 
 def _systemd_user_service_status(service: str) -> Dict[str, Any]:
@@ -642,21 +741,16 @@ def _systemd_user_service_status(service: str) -> Dict[str, Any]:
     if not service:
         info["error"] = "Имя systemd-сервиса не задано"
         return info
-    try:
-        r = subprocess.run(
-            ["systemctl", "--user", "is-active", service],
-            text=True,
-            capture_output=True,
-        )
-        info["active"] = (r.returncode == 0) and (r.stdout.strip() == "active")
-        r2 = subprocess.run(
-            ["systemctl", "--user", "is-enabled", service],
-            text=True,
-            capture_output=True,
-        )
-        info["enabled"] = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
-    except Exception as exc:
-        info["error"] = str(exc)
+    resp = _call_art_action("service_status", {"service": service})
+    result = resp.get("result") if resp.get("ok") else {}
+    info.update(
+        {
+            "active": bool(result.get("active", False)),
+            "enabled": bool(result.get("enabled", False)),
+        }
+    )
+    if not resp.get("ok"):
+        info["error"] = resp.get("error", "")
     return info
 
 
@@ -824,6 +918,15 @@ async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, 
         raise HTTPException(status_code=400, detail="events must be a list")
 
     correlation_headers = _collect_correlation_headers(request)
+    trace_id = (
+        correlation_headers.get("x-trace-id")
+        or request.headers.get("x-trace-id")
+        or uuid.uuid4().hex
+    )
+    await spool.append_audit(
+        "ui_art_ingest",
+        {"client_id": client_id, "events_count": len(events), "trace_id": trace_id},
+    )
 
     try:
         response = await _forward_to_art(events, client_id, correlation_headers)
@@ -845,7 +948,22 @@ async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, 
         await _maybe_move_to_dlq(results, events, client_id)
         return payload_ack
     except httpx.TimeoutException as exc:
-        await _spool_events(events, client_id, "art_timeout")
+        upstream_error_event = _build_upstream_error_event(
+            trace_id=trace_id,
+            where="ui_proxy._forward_to_art",
+            why="timeout",
+            what="Timeout while forwarding events to Art ingest",
+            evidence={"error": str(exc), "url": ART_INGEST_URL},
+            retry_count=0,
+            actions=["retry_batch", "check_art_ingest_health"],
+        )
+        logger.warning("observability_gap.upstream_error: %s", upstream_error_event)
+        overflow_response = await _safe_spool_events(events, client_id, "art_timeout")
+        if overflow_response:
+            payload_body = json.loads(overflow_response.body.decode("utf-8"))
+            payload_body["upstream_error"] = upstream_error_event
+            overflow_response.body = json.dumps(payload_body).encode("utf-8")
+            return overflow_response
         return JSONResponse(
             {
                 "ok": False,
@@ -853,19 +971,46 @@ async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, 
                 "reason": str(exc),
                 "results": _results_retry(events, "art_timeout"),
                 "retry_after_ms": 1000,
+                "upstream_error": upstream_error_event,
             },
             status_code=504,
         )
     except httpx.RequestError as exc:
-        await _spool_events(events, client_id, "art_request_error")
+        upstream_error_event = _build_upstream_error_event(
+            trace_id=trace_id,
+            where="ui_proxy._forward_to_art",
+            why="request_error",
+            what="Network/request error while forwarding events to Art ingest",
+            evidence={"error": str(exc), "url": ART_INGEST_URL},
+            retry_count=0,
+            actions=["retry_batch", "check_network", "check_art_ingest_health"],
+        )
+        logger.warning("observability_gap.upstream_error: %s", upstream_error_event)
+        overflow_response = await _safe_spool_events(events, client_id, "art_request_error")
+        if overflow_response:
+            payload_body = json.loads(overflow_response.body.decode("utf-8"))
+            payload_body["upstream_error"] = upstream_error_event
+            overflow_response.body = json.dumps(payload_body).encode("utf-8")
+            return overflow_response
         return JSONResponse(
             {
                 "ok": False,
                 "error": "upstream_error",
                 "reason": str(exc),
                 "results": _results_retry(events, "art_request_error"),
+                "upstream_error": upstream_error_event,
             },
             status_code=502,
+        )
+    except SpoolOverflowError as exc:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "spool_full",
+                "reason": str(exc),
+                "results": _results_retry(events, "spool_full"),
+            },
+            status_code=507,
         )
 
 
@@ -1016,28 +1161,14 @@ def ui_langgraph_start() -> Dict[str, Any]:
 
 @app.get("/ui/ui-proxy/status")
 def ui_ui_proxy_status() -> Dict[str, Any]:
-    # ui_proxy теперь управляется user systemd-сервисом
     svc = "my_langgraph_ui_proxy.service"
-    active = False
-    enabled = False
-    err = ""
-    try:
-        r = subprocess.run(["systemctl", "--user", "is-active", svc], text=True, capture_output=True)
-        active = (r.returncode == 0) and (r.stdout.strip() == "active")
-        r2 = subprocess.run(["systemctl", "--user", "is-enabled", svc], text=True, capture_output=True)
-        enabled = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
-    except Exception as e:
-        err = str(e)
-
-    out = {
+    status = _systemd_user_service_status(svc)
+    return {
         "ok": True,
-        "systemd_user_service": {"name": svc, "active": active, "enabled": enabled},
+        "systemd_user_service": status,
         "health": _http_health(f"http://{PROXY_HOST}:{PROXY_PORT}/health"),
         "base_url": f"http://{PROXY_HOST}:{PROXY_PORT}",
     }
-    if err:
-        out["systemd_user_service"]["error"] = err
-    return out
 
 
 @app.options("/ui/art/stream")
@@ -1047,15 +1178,20 @@ def ui_art_stream_options() -> Dict[str, Any]:
 
 @app.get("/ui/art/stream")
 async def ui_art_stream(request: Request, cursor: Optional[str] = None) -> StreamingResponse:
+    _ensure_art_tls_config()
     params: Dict[str, str] = {}
     if cursor:
         params["cursor"] = cursor
 
     headers = _collect_correlation_headers(request)
     headers["accept"] = "text/event-stream"
+    await spool.append_audit(
+        "ui_art_stream",
+        {"cursor": cursor or "", "trace_id": headers.get("x-trace-id", "")},
+    )
 
     try:
-        async with httpx.AsyncClient(timeout=_build_art_stream_timeout()) as client:
+        async with httpx.AsyncClient(timeout=_build_art_stream_timeout(), verify=ART_TLS_VERIFY) as client:
             async with client.stream("GET", ART_STREAM_URL, params=params, headers=headers) as resp:
                 if resp.status_code != 200:
                     detail = ""
@@ -1095,62 +1231,31 @@ async def ui_art_stream(request: Request, cursor: Optional[str] = None) -> Strea
 @app.post("/ui/ui-proxy/start")
 def ui_ui_proxy_start() -> Dict[str, Any]:
     svc = "my_langgraph_ui_proxy.service"
-    try:
-        r = subprocess.run(["systemctl", "--user", "start", svc], text=True, capture_output=True)
-        if r.returncode != 0:
-            return {"ok": False, "error": (r.stderr.strip() or r.stdout.strip() or "start failed")}
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return _systemd_user_action("start", svc)
 
 
 @app.post("/ui/ui-proxy/restart")
 def ui_ui_proxy_restart() -> Dict[str, Any]:
-    # Ответить до рестарта: делаем restart через задержку
     svc = "my_langgraph_ui_proxy.service"
-    subprocess.Popen(
-        ["bash", "-lc", f"sleep 0.2; systemctl --user restart {svc}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return {"ok": True}
+    return _systemd_user_action("restart", svc)
 
 
 @app.post("/ui/ui-proxy/stop")
 def ui_ui_proxy_stop() -> Dict[str, Any]:
-    # Ответить до остановки: делаем stop через задержку
     svc = "my_langgraph_ui_proxy.service"
-    subprocess.Popen(
-        ["bash", "-lc", f"sleep 0.2; systemctl --user stop {svc}"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    return {"ok": True}
+    return _systemd_user_action("stop", svc)
 
 
 @app.get("/ui/react-ui/status")
 def ui_react_ui_status() -> Dict[str, Any]:
     svc = "my_langgraph_react_ui.service"
-    active = False
-    enabled = False
-    err = ""
-    try:
-        r = subprocess.run(["systemctl", "--user", "is-active", svc], text=True, capture_output=True)
-        active = (r.returncode == 0) and (r.stdout.strip() == "active")
-        r2 = subprocess.run(["systemctl", "--user", "is-enabled", svc], text=True, capture_output=True)
-        enabled = (r2.returncode == 0) and (r2.stdout.strip() == "enabled")
-    except Exception as e:
-        err = str(e)
-
-    out = {
+    status = _systemd_user_service_status(svc)
+    return {
         "ok": True,
-        "systemd_user_service": {"name": svc, "active": active, "enabled": enabled},
+        "systemd_user_service": status,
         "health": _http_health("http://127.0.0.1:5175/"),
         "base_url": "http://127.0.0.1:5175",
     }
-    if err:
-        out["systemd_user_service"]["error"] = err
-    return out
 
 
 

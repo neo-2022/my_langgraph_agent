@@ -217,6 +217,12 @@
 - [x] parent_span_id обязателен в событиях
 - [x] UI показывает, кто вызвал узел (подсветка входящего ребра / бейдж called by)
 
+- [x] При пустом графе (fetch завершён, container >0, nodes=edges=0) генерируется `ui.graph.empty`:
+  - [x] Событие содержит `ctx`: `assistant_id`, `container_w`, `container_h`, `nodes_count`, `edges_count`, `in_flight`, `last_fetch_ms`, `trace_id`.
+  - [x] Контейнер проверяется через `wrapRef` (ширина/высота >0); событие не возникает при нулевых размерах.
+  - [x] `last_fetch_ms` = время от начала fetch; `in_flight`=false после завершения.
+  - [x] `tests/graph_empty.spec.js` проверяет helper `buildGraphEmptyEvent`, включая `trace_id`.
+
 ---
 
 ## 4) Инспектор узла (клик) + детали (обязательно)

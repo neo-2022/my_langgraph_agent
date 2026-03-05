@@ -11,6 +11,7 @@ import dagre from "dagre";
 import Tooltip from "./Tooltip.jsx";
 import "./GraphView.css";
 import { httpClient } from "./obs/httpClient.js";
+import { getTraceId } from "./obs/correlation.js";
 
 const graphCache = {
   nodes: [],
@@ -32,6 +33,7 @@ function pushGraphEvent(event = {}) {
       name: event.name || "graph.event",
       payload: event.payload,
       attrs: event.attrs,
+      ctx: event.ctx,
       ...GRAPH_UI_CONTEXT,
     });
   } catch {}
@@ -50,6 +52,40 @@ function pushGraphSnapshot(data = {}) {
 }
 
 const GRAPH_POS_STORAGE_PREFIX = "lg_graph_positions:";
+
+export function buildGraphEmptyEvent({
+  assistantId,
+  direction,
+  containerRect,
+  nodesCount,
+  edgesCount,
+  inFlight,
+  lastFetchMs,
+}) {
+  const width = Math.max(0, Math.round(containerRect?.width || 0));
+  const height = Math.max(0, Math.round(containerRect?.height || 0));
+  return {
+    name: "ui.graph.empty",
+    level: "warn",
+    message: "Граф пуст",
+    payload: {
+      assistantId,
+      direction,
+      nodes: nodesCount,
+      edges: edgesCount,
+    },
+    ctx: {
+      assistant_id: assistantId,
+      container_w: width,
+      container_h: height,
+      nodes_count: nodesCount,
+      edges_count: edgesCount,
+      in_flight: !!inFlight,
+      last_fetch_ms: Number.isFinite(lastFetchMs) ? Math.max(-1, Math.round(lastFetchMs)) : -1,
+      trace_id: getTraceId(),
+    },
+  };
+}
 
 function storageKeyForAssistant(assistantId) {
   if (!assistantId) return null;
@@ -956,13 +992,23 @@ export default function GraphView({
           edges: laid.edges.length,
         },
       });
-      if (nodesWithPositions.length === 0) {
-        pushGraphEvent({
-          name: "graph.empty",
-          message: "Граф пуст",
-          level: "warn",
-          payload: { assistantId, direction },
-        });
+      if (nodesWithPositions.length === 0 && laid.edges.length === 0) {
+        const rect = wrapRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          const now = Date.now();
+          const startTs = lastFetchRef.current.ts || now;
+          const lastFetchMs = Math.max(-1, now - startTs);
+          const emptyEvent = buildGraphEmptyEvent({
+            assistantId,
+            direction,
+            containerRect: rect,
+            nodesCount: nodesWithPositions.length,
+            edgesCount: laid.edges.length,
+            inFlight: false,
+            lastFetchMs,
+          });
+          pushGraphEvent(emptyEvent);
+        }
       }
 
       setNodes(nodesWithPositions);

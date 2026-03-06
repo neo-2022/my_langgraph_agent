@@ -88,7 +88,7 @@
 
 **A) Debugger Core (фон, всегда включён)**
 - [x] Core стартует первым и собирает события/ошибки в ring-buffer (errors/breadcrumbs/network/snapshots). Все методы (`pushError/pushEvent/pushSnapshot`) реализованы в `ui/src/debugger/core.js`.
-  - [x] subscribe(listener) для UI панели (UiError + DebugEvent, после нормализации; порядок без пропусков подтвержден unit-тестом `tests/debugger_core.spec.js`)
+   - [x] subscribe(listener) для UI панели (UiError + DebugEvent, после нормализации; порядок без пропусков подтвержден unit-тестом `tests/debugger_core.spec.js` и CI gate `scripts/ci/check_stage05_wrapper.sh`).
 - [ ] Core делает dedupe + throttle (без спама), как описано в 1.0.4.
 
 **B) Единый формат событий (DebugEvent) и корреляция (без хардкода)**
@@ -223,6 +223,13 @@
   - [x] `last_fetch_ms` = время от начала fetch; `in_flight`=false после завершения.
   - [x] `tests/graph_empty.spec.js` проверяет helper `buildGraphEmptyEvent`, включая `trace_id`.
 
+## Observability gap — ui_proxy_unavailable
+
+- [x] При падении `/ui/ui-proxy/status` или `health.ok=false` Level0 фиксирует `observability_gap.ui_proxy_unavailable` (`ui/src/obs/uiProxyGap.js`).
+- [x] Payload покрывает `endpoint`, `status`, `retry_count`, `backoff_ms`, `trace_id` и раскрывает причинный текст ошибки или `base_url`.
+- [x] Событие записано в `docs/governance/observability_gap_registry.md` с `incident_rule` = `create_incident` и `action_ref` → `docs/runbooks/ui_proxy_unavailable.md`.
+- [x] **Проверка (pass/fail):** `tests/uiProxyGap.spec.js` + ручной сценарий (отключить UI Proxy и убедиться, что gap попал в Level0/панель).
+
 ---
 
 ## 4) Инспектор узла (клик) + детали (обязательно)
@@ -306,3 +313,9 @@
 ## 9) UX тест и подсказки
 - [ ] Прогон длинных сессий (проверка лагов/частоты обновлений)
 - [ ] Мини-справка в UI: hover/click/zoom/fit + Debug Mode
+
+## Stage 5 CI gate / evidence
+- [x] `scripts/ci/check_stage05_wrapper.sh` exists and was executed (ensures `subscribe(listener)` text + test run).
+- [x] `npm test -- debugger_core.spec.js` output captured by the script: `Test Files 1 passed (1)` / `Tests 2 passed (2)` (12:43:49 run).
+
+- [x] Автотест подтверждает `subscribe(listener)` и порядок доставки (Шаг 1). Evidence: `tests/debugger_core.spec.js` + `npm test -- debugger_core.spec.js` via `scripts/ci/check_stage05_wrapper.sh`.

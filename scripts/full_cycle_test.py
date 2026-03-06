@@ -32,7 +32,7 @@ def _start_proxy(spool_path: str) -> subprocess.Popen:
             "ART_INGEST_URL": f"http://127.0.0.1:{MOCK_PORT}/api/v1/ingest",
             "ART_STREAM_URL": f"http://127.0.0.1:{MOCK_PORT}/api/v1/stream",
             "UI_PROXY_SPOOL_PATH": spool_path,
-            "REACT_PORT": "5174",
+            "REACT_PORT": "5175",
         }
     )
     return subprocess.Popen(

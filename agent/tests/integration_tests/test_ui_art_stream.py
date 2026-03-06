@@ -53,6 +53,7 @@ async def test_ui_art_stream_proxies_events(monkeypatch):
         paths.append(path)
 
     async with _mock_art_stream(handler) as port:
+        monkeypatch.setattr(ui_proxy, "_ensure_art_tls_config", lambda: None)
         monkeypatch.setattr(ui_proxy, "ART_STREAM_URL", f"http://127.0.0.1:{port}/api/v1/stream")
         transport = httpx.ASGITransport(app=ui_proxy.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -72,6 +73,7 @@ async def test_ui_art_stream_respects_cursor_param(monkeypatch):
         seen_query.append(parsed.query)
 
     async with _mock_art_stream(handler) as port:
+        monkeypatch.setattr(ui_proxy, "_ensure_art_tls_config", lambda: None)
         monkeypatch.setattr(ui_proxy, "ART_STREAM_URL", f"http://127.0.0.1:{port}/api/v1/stream")
         transport = httpx.ASGITransport(app=ui_proxy.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -86,6 +88,7 @@ async def test_ui_art_stream_retries_after_header(monkeypatch):
         return await _default_handler(reader, writer, response_headers={"Retry-After": "10"})
 
     async with _mock_art_stream(handler) as port:
+        monkeypatch.setattr(ui_proxy, "_ensure_art_tls_config", lambda: None)
         monkeypatch.setattr(ui_proxy, "ART_STREAM_URL", f"http://127.0.0.1:{port}/api/v1/stream")
         transport = httpx.ASGITransport(app=ui_proxy.app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

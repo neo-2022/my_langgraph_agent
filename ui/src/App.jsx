@@ -9,6 +9,9 @@ import { getUiErrorCore } from "./debugger/core.js";
 import { fetchClientInfo } from "./obs/clientInfo.js";
 import { httpClient, stream as httpStream } from "./obs/httpClient.js";
 import { startArtStream } from "./obs/artStream.js";
+import { notifyUiProxyUnavailable } from "./obs/uiProxyGap.js";
+
+const UI_PROXY_BACKOFF_MS = 1500;
 
 
   // ----------------------------
@@ -919,7 +922,12 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState("не проверял");
   const [apiError, setApiError] = useState("");
   const [scannerStatus, setScannerStatus] = useState("");
+  const [scannerStatusTone, setScannerStatusTone] = useState("ok");
+  const [scannerStatusTip, setScannerStatusTip] = useState(
+    "Обновить сигнатуры ClamAV"
+  );
   const [scannerLoading, setScannerLoading] = useState(false);
+  const scannerStatusTimerRef = useRef(null);
   const UI_PROXY_BASE_URL = import.meta.env.VITE_UI_PROXY_BASE_URL || "http://127.0.0.1:8090";
 
   useEffect(() => {
@@ -938,23 +946,59 @@ export default function App() {
     return "neutral";
   }, [apiStatus]);
 
+  const showScannerStatus = useCallback((text, tone, tip) => {
+    setScannerStatus(text);
+    setScannerStatusTone(tone || "ok");
+    if (tip) {
+      setScannerStatusTip(tip);
+    }
+    if (scannerStatusTimerRef.current) {
+      window.clearTimeout(scannerStatusTimerRef.current);
+    }
+    scannerStatusTimerRef.current = window.setTimeout(() => {
+      setScannerStatus("");
+    }, 3000);
+  }, []);
+
   const triggerScannerUpdate = useCallback(async () => {
     setScannerLoading(true);
     try {
       const baseUrl = UI_PROXY_BASE_URL;
       const resp = await httpClient.post("/ui/attachments/update-scanner", { baseUrl });
-      setScannerStatus(`Обновлено: ${resp.message || "OK"}`);
+      const details = String(resp?.message || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const shortText = details.some((line) => /up-to-date/i.test(line))
+        ? "Базы AV уже актуальны"
+        : "Обновление AV завершено";
+      const tip = details.length
+        ? `Результат: ${details.slice(0, 3).join(" | ")}`
+        : "Обновление сигнатур выполнено";
+      showScannerStatus(shortText, "ok", tip);
     } catch (error) {
       const payload =
         (typeof error?.responseText === "string" && safeJsonParse(error.responseText)) ||
         (typeof error?.response?.text === "function" ? await error.response.text().then(safeJsonParse).catch(() => null) : null);
       const detail = payload?.detail || payload?.message || error?.message || "неизвестно";
-      console.warn("scanner update failed - falling back to success", detail, error);
-      setScannerStatus(`Обновление AV запрошено${detail ? ` (${detail})` : ""}`);
+      console.warn("scanner update failed", detail, error);
+      showScannerStatus(
+        "Не удалось обновить AV",
+        "error",
+        `Ошибка обновления: ${String(detail)}`
+      );
     } finally {
       setScannerLoading(false);
     }
-  }, [UI_PROXY_BASE_URL]);
+  }, [UI_PROXY_BASE_URL, showScannerStatus]);
+
+  useEffect(() => {
+    return () => {
+      if (scannerStatusTimerRef.current) {
+        window.clearTimeout(scannerStatusTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const agent = startArtStream({ baseUrl: UI_PROXY_BASE_URL });
@@ -1676,20 +1720,49 @@ setLgStatus(null);
   // UI Proxy service control (status only; индикатор строго "по факту")
   const [uiProxyStatus, setUiProxyStatus] = useState(null);
   const [uiProxyError, setUiProxyError] = useState("");
+  const uiProxyRetryRef = useRef(0);
+
+  const resetUiProxyRetries = useCallback(() => {
+    uiProxyRetryRef.current = 0;
+  }, []);
+
+  const reportUiProxyFailure = useCallback(
+    (statusRecord, errorMessage) => {
+      uiProxyRetryRef.current += 1;
+      notifyUiProxyUnavailable({
+        status: statusRecord,
+        error: errorMessage || "ui proxy error",
+        retryCount: uiProxyRetryRef.current,
+        backoffMs: UI_PROXY_BACKOFF_MS,
+      });
+    },
+    [notifyUiProxyUnavailable],
+  );
 
   const refreshUiProxyStatus = useCallback(async () => {
     setUiProxyError("");
     try {
       const s = await getJson("/ui/ui-proxy/status");
       setUiProxyStatus(s);
+      if (s?.health?.ok) {
+        resetUiProxyRetries();
+      }
       return s;
     } catch (e) {
       setUiProxyError(String(e?.message || e));
-              try { captureUi(e, { source: "ui_proxy", severity: "error", where: "catch:ui_proxy_status", extra_details: { target: "setUiProxyError" } }); } catch {}
-setUiProxyStatus(null);
+      try {
+        captureUi(e, {
+          source: "ui_proxy",
+          severity: "error",
+          where: "catch:ui_proxy_status",
+          extra_details: { target: "setUiProxyError" },
+        });
+      } catch {}
+      setUiProxyStatus(null);
+      reportUiProxyFailure(null, String(e?.message || e));
       return null;
     }
-  }, []);
+  }, [reportUiProxyFailure, resetUiProxyRetries]);
 
   // React UI service control (status only; индикатор строго "по факту")
   const [reactUiStatus, setReactUiStatus] = useState(null);
@@ -1703,8 +1776,15 @@ setUiProxyStatus(null);
       return s;
     } catch (e) {
       setReactUiError(String(e?.message || e));
-              try { captureUi(e, { source: "ui", severity: "error", where: "catch:react_ui_status", extra_details: { target: "setReactUiError" } }); } catch {}
-setReactUiStatus(null);
+      try {
+        captureUi(e, {
+          source: "ui",
+          severity: "error",
+          where: "catch:react_ui_status",
+          extra_details: { target: "setReactUiError" },
+        });
+      } catch {}
+      setReactUiStatus(null);
       return null;
     }
   }, []);
@@ -1738,13 +1818,17 @@ setReactUiStatus(null);
           const ok = !!(uiProxyStatus.health && uiProxyStatus.health.ok);
           if (!ok) {
             const base = String(uiProxyStatus.base_url || "");
-            captureUi(new Error(base ? `UI Proxy недоступен (${base}).` : "UI Proxy недоступен."), {
+            const message = base ? `UI Proxy недоступен (${base}).` : "UI Proxy недоступен.";
+            captureUi(new Error(message), {
               source: "ui_proxy",
               severity: "error",
               where: "service:ui_proxy",
               hint: "Проверь, что UI Proxy запущен (systemd user service) и порт доступен.",
               extra_details: { kind: "service_status", service: "ui_proxy", status: uiProxyStatus },
             });
+            reportUiProxyFailure(uiProxyStatus, message);
+          } else {
+            resetUiProxyRetries();
           }
         }
       } catch {}
@@ -1764,7 +1848,7 @@ setReactUiStatus(null);
           }
         }
       } catch {}
-    }, [lgStatus, uiProxyStatus, reactUiStatus]);
+    }, [lgStatus, uiProxyStatus, reactUiStatus, reportUiProxyFailure, resetUiProxyRetries]);
 // Авто-обновление статусов UI Proxy + React UI, пока открыт "Общее"
   useEffect(() => {
     if (!openPanels.includes("general")) return;
@@ -2133,18 +2217,23 @@ setReactUiStatus(null);
                   <span className="mono">sudo freshclam</span>.
                 </div>
 
-                <button
-                  className="secondary-btn"
-                  type="button"
-                  onClick={triggerScannerUpdate}
-                  disabled={scannerLoading}
-                  style={{ marginTop: 6 }}
-                >
-                  {scannerLoading ? "Обновление AV..." : "Обновить AV-сканер"}
-                </button>
+                <Tooltip tip={scannerStatusTip} scope="viewport">
+                  <button
+                    className="secondary-btn"
+                    type="button"
+                    onClick={triggerScannerUpdate}
+                    disabled={scannerLoading}
+                    style={{ marginTop: 6 }}
+                  >
+                    {scannerLoading ? "Обновление AV..." : "Обновить AV-сканер"}
+                  </button>
+                </Tooltip>
 
                 {scannerStatus ? (
-                  <div className="ok" style={{ marginTop: 4 }}>
+                  <div
+                    className={scannerStatusTone === "error" ? "error" : "ok"}
+                    style={{ marginTop: 4 }}
+                  >
                     {scannerStatus}
                   </div>
                 ) : null}

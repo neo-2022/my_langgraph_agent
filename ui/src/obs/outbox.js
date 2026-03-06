@@ -3,6 +3,7 @@ import { normalizeRawEvent } from "./rawEvent.normalize.js";
 import { getSessionId } from "./session.js";
 import { defaultOutboxDb, createOutboxDb } from "./outbox.db.js";
 import { tabLock } from "./tabLock.js";
+import { shouldSendDedup } from "../multiTabManager.js";
 
 const STATUS = Object.freeze({
   pending: "pending",
@@ -114,12 +115,21 @@ export class Outbox {
       }
       const batch = await this._collectBatch();
       if (!batch.length) return;
-      await this._markInFlight(batch);
+      const batchToSend = [];
+      for (const entry of batch) {
+        if (!shouldSendDedup(entry.raw_event?.dedup_key)) {
+          await this.db.events.delete(entry.id);
+          continue;
+        }
+        batchToSend.push(entry);
+      }
+      if (!batchToSend.length) return;
+      await this._markInFlight(batchToSend);
       try {
-        const response = await this.sendBatch({ events: batch.map((entry) => entry.raw_event) });
-        await this._processBatch(batch, response?.results ?? []);
+        const response = await this.sendBatch({ events: batchToSend.map((entry) => entry.raw_event) });
+        await this._processBatch(batchToSend, response?.results ?? []);
       } catch (error) {
-        await this._handleFlushError(batch, error);
+        await this._handleFlushError(batchToSend, error);
       }
     } finally {
       if (hasLock) {

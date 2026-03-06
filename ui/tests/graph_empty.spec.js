@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGraphEmptyEvent } from "../src/GraphView.jsx";
+import { buildGraphEmptyEvent, buildGraphEmptyEventIfNeeded } from "../src/GraphView.jsx";
 
 describe("buildGraphEmptyEvent", () => {
   it("builds ctx with required fields", () => {
@@ -25,5 +25,62 @@ describe("buildGraphEmptyEvent", () => {
       last_fetch_ms: 101,
     });
     expect(typeof event.ctx.trace_id).toBe("string");
+  });
+});
+
+describe("buildGraphEmptyEventIfNeeded", () => {
+  it("returns ui.graph.empty when all required conditions are met", () => {
+    const event = buildGraphEmptyEventIfNeeded({
+      assistantId: "assistant-1",
+      direction: "LR",
+      containerRect: { width: 320, height: 240 },
+      nodesCount: 0,
+      edgesCount: 0,
+      inFlight: false,
+      lastFetchMs: 50,
+    });
+
+    expect(event).not.toBeNull();
+    expect(event.name).toBe("ui.graph.empty");
+    expect(event.ctx.nodes_count).toBe(0);
+    expect(event.ctx.edges_count).toBe(0);
+  });
+
+  it("returns null when conditions are not met", () => {
+    expect(
+      buildGraphEmptyEventIfNeeded({
+        assistantId: "assistant-1",
+        direction: "LR",
+        containerRect: { width: 0, height: 240 },
+        nodesCount: 0,
+        edgesCount: 0,
+        inFlight: false,
+        lastFetchMs: 10,
+      })
+    ).toBeNull();
+
+    expect(
+      buildGraphEmptyEventIfNeeded({
+        assistantId: "assistant-1",
+        direction: "LR",
+        containerRect: { width: 320, height: 240 },
+        nodesCount: 1,
+        edgesCount: 0,
+        inFlight: false,
+        lastFetchMs: 10,
+      })
+    ).toBeNull();
+
+    expect(
+      buildGraphEmptyEventIfNeeded({
+        assistantId: "assistant-1",
+        direction: "LR",
+        containerRect: { width: 320, height: 240 },
+        nodesCount: 0,
+        edgesCount: 0,
+        inFlight: true,
+        lastFetchMs: 10,
+      })
+    ).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getUiErrorCore } from "../src/debugger/core.js";
+import { getUiErrorCore, UiErrorCore } from "../src/debugger/core.js";
 
 function makeMockLevel0() {
   const errorListeners = new Set();
@@ -63,5 +63,25 @@ describe("UiErrorCore subscribe(listener)", () => {
     expect(got[1]).toEqual(expect.objectContaining({ event_id: "ev-1", name: "ui.test", level: "info" }));
 
     unsub();
+  });
+
+  it("subscribe(listener) receives events in emission order and supports unsubscribe", () => {
+    const core = new UiErrorCore({ capacity: 200 });
+    const received = [];
+    const unsub = core.subscribe((record) => {
+      received.push(record);
+    });
+
+    const pushError = () => core.push(new Error("boom"), { scope: "ui", severity: "error", message: "boom" });
+    pushError();
+    globalThis.window.__DBG0__.emitEvent({ event_id: "ev-1", name: "ui.event", level: "info" });
+    globalThis.window.__DBG0__.emitEvent({ event_id: "ev-2", name: "ui.event", level: "info" });
+
+    expect(received.map((rec) => rec.event_id || rec.id)).toEqual(["err-1", "ev-1", "ev-2"]);
+
+    unsub();
+
+    globalThis.window.__DBG0__.emitEvent({ event_id: "ev-3", name: "ui.event", level: "info" });
+    expect(received).toHaveLength(3);
   });
 });

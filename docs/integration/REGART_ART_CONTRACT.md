@@ -85,7 +85,7 @@
 - Attachments хранятся в отдельной директории/таблице, с `metadata.mime`, `metadata.sha256`.
 
 ## 10. CORS и логирование
-- UI Proxy CORS: allow origins (`http://localhost:5174`, `http://127.0.0.1:5174`), методы `GET, POST, OPTIONS`, headers `Content-Type, Authorization, X-Trace-Id`, preflight caching `max-age=600`.
+- UI Proxy CORS: allow origins (`http://localhost:5175`, `http://127.0.0.1:5175`), методы `GET, POST, OPTIONS`, headers `Content-Type, Authorization, X-Trace-Id`, preflight caching `max-age=600`.
 - Логи фильтруют `Authorization`, `X-API-Key`, `ART_TOKEN`. Любые засекреченные значения заменяются `***` и не появляются в `ui_proxy.log`.
 - `observability_gap.log_secret_leak` логируется, если секрет был попыткой залогировать.
 - `observability_gap.cors_blocked` при блокировке preflight.

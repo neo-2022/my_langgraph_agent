@@ -9,6 +9,8 @@ ExecStart=/bin/bash -lc 'source %h/my_langgraph_agent/venv/bin/activate && UI_PR
 Environment=PATH=%h/my_langgraph_agent/venv/bin:/usr/local/bin:/usr/bin
 Environment=LANGGRAPH_SYSTEMD_SERVICE=my_langgraph.service
 Environment=ART_STREAM_URL=http://127.0.0.1:7331/api/v1/stream
+Environment=REACT_PORT=5175
+Environment=UI_PROXY_CORS_ORIGINS=http://127.0.0.1:5175,http://localhost:5175,http://127.0.0.1:8090,http://localhost:8090
 Restart=always
 RestartSec=2
 

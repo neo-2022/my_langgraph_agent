@@ -44,7 +44,7 @@
 - restart LangGraph через systemd-сервис (для применения настроек)
 
 ### 1.4 React UI (Vite)
-- UI на `http://127.0.0.1:5174`
+- UI на `http://127.0.0.1:5175`
 - базовый layout: rail + drawers + main tabs
 - вкладка Run: stream, показ messages, tool_calls/tool results
 - вкладка Graph: React Flow + Dagre layout + Controls/MiniMap

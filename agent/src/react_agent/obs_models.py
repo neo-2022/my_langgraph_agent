@@ -33,5 +33,7 @@ class RawEventModel(BaseModel):
     attachments: Optional[List[AttachmentMeta]]
     content_hash: Optional[str]
     version_history: Optional[List[str]]
+    trace_id: Optional[str] = None
+    retry_count: int = Field(default=0, ge=0)
 
     model_config = ConfigDict(extra="ignore")

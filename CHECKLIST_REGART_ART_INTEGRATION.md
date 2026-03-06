@@ -5,6 +5,28 @@ Wrapper в Art: `https://github.com/neo-2022/Art/blob/main/docs/source/checklist
 
 ---
 
+# stage6) REGART→Art bridge readiness (Stage 06)
+
+1. [x] Зафиксировать overflow политики Outbox/Spool (default=`never_drop_unacked`, optional=`drop_oldest_when_full`), указать, какие observability события/метрики они генерируют (`observability_gap.outbox_full`, `observability_gap.spool_full`, `data_quality.lossy_outbox_drop`, `lossy_mode_active`, `outbox_dropped_total`, `spool_dropped_total`).  
+   **Проверка:** `test -f docs/agent/spool_policies.md` && `rg -n "never_drop_unacked" docs/agent/spool_policies.md` && `rg -n "drop_oldest_when_full" docs/agent/spool_policies.md` && `rg -n "lossy_mode_active" docs/runbooks/lossy_mode_active.md` && `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_never_drop_unacked_rejects_new agent/tests/integration_tests/test_ui_art_ingest.py::test_drop_oldest_when_full_logs_lossy`.
+
+2. [x] Документировать Actions-only путь (`POST /api/v1/actions/execute`) и доказать отсутствие `systemctl`/`tmux`/`subprocess` вызовов управления вне Art Actions.  
+   **Проверка:** `rg -n "systemctl" agent/src/react_agent/ui_proxy.py | wc -l` == 0, `rg -n "tmux" agent/src/react_agent/ui_proxy.py | wc -l` == 0, `docs/regart/art_bridge_runbook.md` содержит раздел “Actions-only” и `observability_gap.actions.failure`, а `pytest -q agent/tests/integration_tests/test_ui_proxy_service_actions.py` подтверждает работу action-пути (start/restart/stop).
+
+3. [x] Зафиксировать HTTPS-only гарантию (Art ingest/stream URL, TLS enforcement).  
+   **Проверка:** `rg -n "ART_INGEST_URL|ART_STREAM_URL|ART_ACTIONS_URL|_ensure_art_tls_config" agent/src/react_agent/ui_proxy.py` показывает `https://` по умолчанию и runtime enforcement, `/home/art/Art/docs/regart/art_bridge_runbook.md` содержит раздел “HTTPS-only”, и `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_art_ingest_https_only_rejects_http agent/tests/integration_tests/test_ui_art_ingest.py::test_art_ingest_tls_smoke_self_signed`.
+
+4. [x] Описать единый upstream error `kind="upstream_error"` (`what/where/why/actions/evidence/trace_id/retry_count`) и пример RawEvent.  
+   **Проверка:** `/home/art/Art/docs/regart/upstream_error_format.md` описывает поля/пример, а `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_upstream_error_format_contains_required_fields` подтверждает формат ответа.
+
+5. [x] Обязательный `retry_count >= 0` в RawEvent + observability.  
+   **Проверка:** `rg -n "retry_count" agent/src/react_agent/ui_proxy.py agent/src/react_agent/obs_models.py /home/art/Art/docs/regart/upstream_error_format.md` + `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_retry_count_present_and_non_negative`.
+
+6. [x] Audit immutability: append-only audit entries, попытка UPDATE/DELETE блокируется, `observability_gap.audit_tampering` генерируется.  
+   **Проверка:** `rg -n "observability_gap.audit_tampering|spool_audit|append-only" agent/src/react_agent/spool.py docs/ops/README.md /home/art/Art/docs/regart/art_bridge_runbook.md` + `pytest -q agent/tests/integration_tests/test_ui_art_ingest.py::test_audit_immutability_append_only`.
+
+---
+
 ## 0) Контракт и инварианты (фиксируем до реализации)
 
 1. [x] Создать `docs/integration/REGART_ART_CONTRACT.md`  

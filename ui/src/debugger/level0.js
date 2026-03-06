@@ -1,5 +1,6 @@
 import { httpClient } from "../obs/httpClient.js";
 import { outbox } from "../obs/outbox.js";
+import { initMultiTab, registerRemoteHandler, broadcastEvent, computeDedupKey } from "../multiTabManager.js";
 
 /**
  * Debugger Level 0 (Bootstrap, до React)
@@ -16,6 +17,8 @@ import { outbox } from "../obs/outbox.js";
 export function initDebuggerLevel0() {
   // Избегаем двойной инициализации (например HMR).
   if (window.__DBG0__?.__inited) return window.__DBG0__;
+
+  initMultiTab();
 
   // ----------------------------
   // 0) Утилиты (без внешних deps)
@@ -176,6 +179,14 @@ export function initDebuggerLevel0() {
       snapshot: new Set(),
     },
   };
+
+  function handleRemoteEvent(event) {
+    if (!event || typeof event !== "object") return;
+    ringPush(state.events, "events", "events", event);
+    notify("event", event);
+  }
+
+  registerRemoteHandler(handleRemoteEvent);
 
   function ringPush(arr, capKey, droppedKey, item) {
     const cap = Math.max(10, Number(state.cap[capKey] || 200));
@@ -385,7 +396,7 @@ export function initDebuggerLevel0() {
     return () => state.listeners.error.delete(fn);
   }
 
-function debugEventToRaw(ev) {
+  function debugEventToRaw(ev) {
     const payload = ev.payload && typeof ev.payload === "object" ? { ...ev.payload } : {};
     const ctx = ev.ctx && typeof ev.ctx === "object" ? { ...ev.ctx } : {};
     const links = Array.isArray(ev.links) ? ev.links.filter(Boolean) : undefined;
@@ -393,7 +404,7 @@ function debugEventToRaw(ev) {
     const span_id = toStr(ev.span_id);
     const event_id = toStr(ev.event_id) || genId("ev");
     const debug_ref = ev.debug_ref || (span_id ? { event_id, span_id } : undefined);
-    return {
+    const raw = {
       schema_version: "REGART.Art.RawEvent.v1",
       event_id,
       kind: toStr(ev.name) || "ui.event",
@@ -411,6 +422,11 @@ function debugEventToRaw(ev) {
       links,
       debug_ref,
     };
+    const dedupKey = computeDedupKey(raw);
+    if (dedupKey) {
+      raw.dedup_key = dedupKey;
+    }
+    return raw;
   }
 
   function pushToOutbox(ev) {
@@ -457,6 +473,9 @@ function debugEventToRaw(ev) {
     ringPush(state.events, "events", "events", out);
     pushToOutbox(out);
     notify("event", out);
+    try {
+      broadcastEvent(out);
+    } catch {}
     return out;
   }
 

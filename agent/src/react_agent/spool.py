@@ -14,7 +14,17 @@ import aiosqlite
 DEFAULT_SPOOL_PATH = Path(os.environ.get("UI_PROXY_SPOOL_PATH", "~/.local/share/regart/ui_proxy_spool.db")).expanduser()
 SCHEMA_VERSION = 1
 RETENTION_SECONDS = int(os.environ.get("UI_PROXY_SPOOL_RETENTION", str(60 * 60 * 24)))
+def _get_max_events() -> int:
+    return int(os.environ.get("UI_PROXY_SPOOL_MAX_EVENTS", "1000"))
+
+
+def _get_overflow_policy() -> str:
+    return os.environ.get("UI_PROXY_SPOOL_OVERFLOW_POLICY", "never_drop_unacked")
 LOGGER = logging.getLogger(__name__)
+
+
+class SpoolOverflowError(Exception):
+    """Raised when the spool cannot accept new events under the configured policy."""
 
 CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS spool_events (
@@ -53,6 +63,32 @@ DLQ_INDICES = [
     "CREATE INDEX IF NOT EXISTS idx_spool_dlq_event ON spool_dlq (event_id);",
 ]
 
+AUDIT_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS spool_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+"""
+
+AUDIT_IMMUTABLE_TRIGGERS = [
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_spool_audit_no_update
+    BEFORE UPDATE ON spool_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'spool_audit is append-only');
+    END;
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS trg_spool_audit_no_delete
+    BEFORE DELETE ON spool_audit
+    BEGIN
+        SELECT RAISE(ABORT, 'spool_audit is append-only');
+    END;
+    """,
+]
+
 META_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS spool_meta (
     key TEXT PRIMARY KEY,
@@ -62,6 +98,14 @@ CREATE TABLE IF NOT EXISTS spool_meta (
 
 def _now_ts() -> int:
     return int(datetime.now(timezone.utc).timestamp())
+
+
+async def _count_pending(conn: aiosqlite.Connection) -> int:
+    cursor = await conn.execute(
+        "SELECT COUNT(*) FROM spool_events WHERE status IN ('pending','retryable')"
+    )
+    row = await cursor.fetchone()
+    return int(row[0]) if row else 0
 
 
 class Spool:
@@ -91,6 +135,9 @@ class Spool:
                     await self._conn.execute(sql)
                 await self._conn.execute(DLQ_TABLE_SQL)
                 for sql in DLQ_INDICES:
+                    await self._conn.execute(sql)
+                await self._conn.execute(AUDIT_TABLE_SQL)
+                for sql in AUDIT_IMMUTABLE_TRIGGERS:
                     await self._conn.execute(sql)
                 await self._conn.execute(META_TABLE_SQL)
                 await self._set_schema_version()
@@ -140,7 +187,19 @@ class Spool:
         conn = await self._connection()
         now = _now_ts()
         await conn.execute("BEGIN IMMEDIATE")
-        for ev in events:
+        pending = await _count_pending(conn)
+        incoming_events = list(events)
+        incoming = len(incoming_events)
+        max_events = _get_max_events()
+        available = max_events - pending
+        policy = _get_overflow_policy()
+        if policy == "drop_oldest_when_full" and (available <= 0 or incoming > available):
+            await self._handle_drop_oldest(conn, max(incoming - max(available, 0), 1), max_events)
+        elif available <= 0:
+            await self._handle_overflow(conn, pending, incoming, max_events, policy)
+        elif incoming > available and policy == "never_drop_unacked":
+            await self._handle_overflow(conn, pending, incoming, max_events, policy)
+        for ev in incoming_events:
             await conn.execute(
                 "INSERT OR IGNORE INTO spool_events (event_id, client_id, raw_event, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (
@@ -153,6 +212,33 @@ class Spool:
             )
         await conn.commit()
         await self.cleanup_retention()
+
+    async def _handle_overflow(
+        self, conn: aiosqlite.Connection, pending: int, incoming: int, max_events: int, policy: str
+    ) -> None:
+        LOGGER.warning(
+            f"observability_gap.spool_full: pending={pending} limit={max_events} incoming={incoming}"
+        )
+        LOGGER.warning(f"observability_gap.outbox_full: policy={policy}")
+        raise SpoolOverflowError("spool is full")
+
+    async def _handle_drop_oldest(self, conn: aiosqlite.Connection, drop_count: int, max_events: int) -> None:
+        drop_count = max(1, drop_count)
+        await conn.execute(
+            "DELETE FROM spool_events WHERE id IN (SELECT id FROM spool_events WHERE status IN ('pending','retryable') ORDER BY created_at ASC LIMIT ?)",
+            (drop_count,),
+        )
+        pending_after = await _count_pending(conn)
+        LOGGER.warning(
+            f"observability_gap.spool_full: dropped={drop_count} pending={pending_after} limit={max_events}"
+        )
+        LOGGER.warning(f"observability_gap.outbox_full: policy=drop_oldest_when_full dropped={drop_count}")
+        LOGGER.warning(
+            f"data_quality.lossy_outbox_drop: dropped={drop_count} pending={pending_after} limit={max_events}"
+        )
+        LOGGER.warning("lossy_mode_active incident triggered (policy drop_oldest_when_full)")
+        LOGGER.warning(f"spool_dropped_total: {drop_count}")
+        LOGGER.warning(f"outbox_dropped_total: {drop_count}")
 
     async def fetch_pending(self, limit: int = 100) -> List[Tuple[int, Dict[str, Any]]]:
         conn = await self._connection()
@@ -215,6 +301,44 @@ class Spool:
             (event_id, client_id, json.dumps(raw_event, ensure_ascii=False), reason, now, attempts),
         )
         await conn.commit()
+
+    async def append_audit(self, action: str, payload: Dict[str, Any]) -> int:
+        if self._corrupted:
+            return -1
+        conn = await self._connection()
+        now = _now_ts()
+        cursor = await conn.execute(
+            "INSERT INTO spool_audit (created_at, action, payload) VALUES (?, ?, ?)",
+            (now, action, json.dumps(payload, ensure_ascii=False)),
+        )
+        await conn.commit()
+        return int(cursor.lastrowid or -1)
+
+    async def verify_audit_immutability(self) -> bool:
+        if self._corrupted:
+            return False
+        conn = await self._connection()
+        entry_id = await self.append_audit("immutability_probe", {"probe": True})
+
+        update_blocked = False
+        delete_blocked = False
+        try:
+            await conn.execute("UPDATE spool_audit SET action='tamper' WHERE id=?", (entry_id,))
+            await conn.commit()
+        except sqlite3.DatabaseError as exc:
+            update_blocked = True
+            await conn.rollback()
+            LOGGER.warning("observability_gap.audit_tampering: update blocked: %s", exc)
+
+        try:
+            await conn.execute("DELETE FROM spool_audit WHERE id=?", (entry_id,))
+            await conn.commit()
+        except sqlite3.DatabaseError as exc:
+            delete_blocked = True
+            await conn.rollback()
+            LOGGER.warning("observability_gap.audit_tampering: delete blocked: %s", exc)
+
+        return update_blocked and delete_blocked
 
     async def close(self) -> None:
         if self._conn:

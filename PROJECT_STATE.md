@@ -10,7 +10,7 @@
 - Стек/язык: React (Vite) UI, backend LangGraph локально, UI Proxy как единая точка входа.
 - Как запустить локально:
   - `~/my_langgraph_agent/run.sh` (копирует `systemd/*.service` и включает LangGraph/UI Proxy/React UI через `systemctl --user enable --now`)
-  - Порты: UI http://127.0.0.1:5174, API Docs http://127.0.0.1:2024/docs, UI Proxy http://127.0.0.1:8090
+  - Порты: UI http://127.0.0.1:5175, API Docs http://127.0.0.1:2024/docs, UI Proxy http://127.0.0.1:8090
 - Основные модули/папки:
   - `agent/` — LangGraph агент (Python)
   - `ui/` — React/Vite UI

@@ -87,6 +87,32 @@ export function buildGraphEmptyEvent({
   };
 }
 
+export function buildGraphEmptyEventIfNeeded({
+  assistantId,
+  direction,
+  containerRect,
+  nodesCount,
+  edgesCount,
+  inFlight,
+  lastFetchMs,
+}) {
+  const width = Number(containerRect?.width || 0);
+  const height = Number(containerRect?.height || 0);
+  const readyContainer = width > 0 && height > 0;
+  if (!readyContainer) return null;
+  if (inFlight) return null;
+  if (nodesCount !== 0 || edgesCount !== 0) return null;
+  return buildGraphEmptyEvent({
+    assistantId,
+    direction,
+    containerRect,
+    nodesCount,
+    edgesCount,
+    inFlight,
+    lastFetchMs,
+  });
+}
+
 function storageKeyForAssistant(assistantId) {
   if (!assistantId) return null;
   return `${GRAPH_POS_STORAGE_PREFIX}${String(assistantId)}`;
@@ -992,24 +1018,20 @@ export default function GraphView({
           edges: laid.edges.length,
         },
       });
-      if (nodesWithPositions.length === 0 && laid.edges.length === 0) {
-        const rect = wrapRef.current?.getBoundingClientRect();
-        if (rect && rect.width > 0 && rect.height > 0) {
-          const now = Date.now();
-          const startTs = lastFetchRef.current.ts || now;
-          const lastFetchMs = Math.max(-1, now - startTs);
-          const emptyEvent = buildGraphEmptyEvent({
-            assistantId,
-            direction,
-            containerRect: rect,
-            nodesCount: nodesWithPositions.length,
-            edgesCount: laid.edges.length,
-            inFlight: false,
-            lastFetchMs,
-          });
-          pushGraphEvent(emptyEvent);
-        }
-      }
+      const rect = wrapRef.current?.getBoundingClientRect();
+      const now = Date.now();
+      const startTs = lastFetchRef.current.ts || now;
+      const lastFetchMs = Math.max(-1, now - startTs);
+      const emptyEvent = buildGraphEmptyEventIfNeeded({
+        assistantId,
+        direction,
+        containerRect: rect,
+        nodesCount: nodesWithPositions.length,
+        edgesCount: laid.edges.length,
+        inFlight: false,
+        lastFetchMs,
+      });
+      if (emptyEvent) pushGraphEvent(emptyEvent);
 
       setNodes(nodesWithPositions);
       setEdges(laid.edges);

@@ -19,6 +19,7 @@ UI Proxy API для React UI.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import json
@@ -87,6 +88,18 @@ ATTACHMENT_SCANNER_UPDATE_CMD = os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", 
 
 def _get_update_cmd() -> str:
     return os.environ.get("ATTACHMENT_SCANNER_UPDATE_CMD", ATTACHMENT_SCANNER_UPDATE_CMD).strip()
+
+
+def _spool_replay_enabled() -> bool:
+    return os.environ.get("UI_PROXY_SPOOL_REPLAY_ENABLED", "1").lower() not in {"0", "false", "no", "off"}
+
+
+def _spool_replay_batch_size() -> int:
+    return max(1, int(os.environ.get("UI_PROXY_SPOOL_REPLAY_BATCH_SIZE", "100")))
+
+
+def _spool_replay_interval_seconds() -> float:
+    return max(0.1, float(os.environ.get("UI_PROXY_SPOOL_REPLAY_INTERVAL_SECONDS", "5")))
 
 REDACT_SENSITIVE_KEYS = {
     "authorization",
@@ -231,6 +244,8 @@ app.add_middleware(
 )
 
 logger = logging.getLogger(__name__)
+_spool_replay_task: Optional[asyncio.Task[None]] = None
+_spool_replay_stop: Optional[asyncio.Event] = None
 
 SENSITIVE_HEADERS = [
     re.compile(r"(authorization:\s*)([^\\s,]+)", re.IGNORECASE),
@@ -259,6 +274,35 @@ class HeaderSanitizer(logging.Filter):
 
 
 logger.addFilter(HeaderSanitizer())
+
+
+@app.on_event("startup")
+async def _startup_spool_runtime() -> None:
+    global _spool_replay_task, _spool_replay_stop
+    await spool.ensure_schema()
+    if not _spool_replay_enabled():
+        _spool_replay_task = None
+        _spool_replay_stop = None
+        return
+    _spool_replay_stop = asyncio.Event()
+    _spool_replay_task = asyncio.create_task(
+        _spool_replay_loop(_spool_replay_stop),
+        name="ui-proxy-spool-replay",
+    )
+
+
+@app.on_event("shutdown")
+async def _shutdown_spool_runtime() -> None:
+    global _spool_replay_task, _spool_replay_stop
+    if _spool_replay_stop is not None:
+        _spool_replay_stop.set()
+    if _spool_replay_task is not None:
+        _spool_replay_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _spool_replay_task
+    _spool_replay_task = None
+    _spool_replay_stop = None
+    await spool.close()
 
 
 @app.get("/health")
@@ -393,6 +437,25 @@ async def _safe_spool_events(events: Iterable[Dict[str, Any]], client_id: str, r
             status_code=507,
         )
     return None
+
+
+def _collect_retryable_events(events: Iterable[Dict[str, Any]], results: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    event_map: Dict[str, Dict[str, Any]] = {}
+    for event in events:
+        event_id = event.get("event_id")
+        if isinstance(event_id, str):
+            event_map[event_id] = event
+
+    retryable: List[Dict[str, Any]] = []
+    for ack in results:
+        status = str(ack.get("status", "")).lower()
+        if status != "retryable":
+            continue
+        event_id = ack.get("event_id")
+        raw_event = event_map.get(event_id)
+        if raw_event is not None:
+            retryable.append(raw_event)
+    return retryable
 
 
 def _collect_correlation_headers(request: Request) -> Dict[str, str]:
@@ -570,6 +633,110 @@ async def _maybe_move_to_dlq(results: List[Dict[str, Any]], events: Iterable[Dic
                 moved += 1
     if moved:
         logger.warning(f"observability_gap.dlq_non_empty: {moved} events moved to DLQ")
+
+
+async def _apply_spool_replay_results(
+    pending: List[Tuple[int, Dict[str, Any]]],
+    results: Optional[List[Dict[str, Any]]],
+    client_id: str,
+) -> int:
+    if not pending:
+        return 0
+
+    if not isinstance(results, list) or not results:
+        await spool.remove([row_id for row_id, _event in pending])
+        return len(pending)
+
+    ack_by_event_id: Dict[str, Dict[str, Any]] = {}
+    for ack in results:
+        event_id = ack.get("event_id")
+        if isinstance(event_id, str):
+            ack_by_event_id[event_id] = ack
+
+    accepted_ids: List[int] = []
+    retryable_ids: List[int] = []
+    removed_to_dlq = 0
+
+    for row_id, event in pending:
+        event_id = event.get("event_id")
+        ack = ack_by_event_id.get(event_id) if isinstance(event_id, str) else None
+        if ack is None:
+            retryable_ids.append(row_id)
+            continue
+
+        status = str(ack.get("status", "")).lower()
+        if status in {"accepted", "ok"}:
+            accepted_ids.append(row_id)
+            continue
+        if status == "retryable":
+            retryable_ids.append(row_id)
+            continue
+        if status in {"rejected", "invalid", "permanent"}:
+            await spool.move_to_dlq(
+                str(event_id or ""),
+                client_id,
+                event,
+                str(ack.get("reason", "rejected") or "rejected"),
+                int(ack.get("attempts", 0) or 0),
+            )
+            accepted_ids.append(row_id)
+            removed_to_dlq += 1
+            continue
+        retryable_ids.append(row_id)
+
+    if accepted_ids:
+        await spool.remove(accepted_ids)
+    if retryable_ids:
+        await spool.mark_retryable(retryable_ids, "replay_pending")
+    if removed_to_dlq:
+        logger.warning(f"observability_gap.dlq_non_empty: {removed_to_dlq} events moved to DLQ")
+    return len(accepted_ids)
+
+
+async def _drain_spool_once() -> int:
+    pending = await spool.fetch_pending(limit=_spool_replay_batch_size())
+    if not pending:
+        return 0
+
+    client_id = _ensure_client_id()
+    event_ids = [str(event.get("event_id", "")) for _row_id, event in pending]
+    await spool.mark_in_flight([row_id for row_id, _event in pending])
+    await spool.append_audit(
+        "spool_replay_attempt",
+        {"client_id": client_id, "count": len(pending), "event_ids": event_ids},
+    )
+
+    try:
+        response = await _forward_to_art([event for _row_id, event in pending], client_id)
+    except httpx.HTTPError as exc:
+        logger.warning(f"observability_gap.art_unreachable: spool replay failed: {exc}")
+        await spool.mark_retryable([row_id for row_id, _event in pending], str(exc))
+        return 0
+
+    drained = await _apply_spool_replay_results(pending, response.get("results"), client_id)
+    await spool.append_audit(
+        "spool_replay_result",
+        {"client_id": client_id, "drained": drained, "attempted": len(pending)},
+    )
+    return drained
+
+
+async def _spool_replay_loop(stop_event: asyncio.Event) -> None:
+    while not stop_event.is_set():
+        try:
+            drained = await _drain_spool_once()
+        except sqlite3.DatabaseError as exc:
+            logger.warning("observability_gap.spool_corrupted: replay disabled: %s", exc)
+            drained = 0
+        except Exception:
+            logger.exception("spool replay loop crashed")
+            drained = 0
+
+        delay = 0.1 if drained else _spool_replay_interval_seconds()
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=delay)
+        except asyncio.TimeoutError:
+            continue
 
 
 def _build_art_timeout() -> httpx.Timeout:
@@ -939,6 +1106,22 @@ async def ui_art_ingest(request: Request, payload: Dict[str, Any]) -> Dict[str, 
                 }
                 for event in events
             ]
+        retryable_events = _collect_retryable_events(events, results)
+        if retryable_events:
+            overflow_response = await _safe_spool_events(retryable_events, client_id, "art_retryable")
+            if overflow_response:
+                body = json.loads(overflow_response.body.decode("utf-8"))
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "spool_full",
+                        "reason": body.get("reason", "spool_full"),
+                        "accepted": response.get("accepted"),
+                        "retry_after_ms": response.get("retry_after_ms"),
+                        "results": results,
+                    },
+                    status_code=507,
+                )
         payload_ack = {
             "ok": response.get("ok", True),
             "accepted": response.get("accepted"),

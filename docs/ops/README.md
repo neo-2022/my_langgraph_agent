@@ -1,3 +1,6 @@
+modified_at: 2026-03-12 20:50 MSK
+Ручная сверка guide/docs: 2026-03-12 20:50 MSK
+
 # Operational notes — REGART ↔ Art
 
 ## Ключевые переменные окружения
@@ -13,6 +16,9 @@
 | `REGART_INGEST_TOKEN` | UI Proxy ingest auth | `super-secret-token` | Токен Bearer для эндпоинтов `/ui/ingest/events` и `/ui/art/ingest`. Без него 401/403. |
 | `UI_PROXY_SPOOL_PATH` | sqlite spool (UI Proxy offline) | `~/.local/share/regart/ui_proxy_spool.db` | Путь к sqlite-файлу, используется при заполнении очереди (`spool_events`). |
 | `UI_PROXY_SPOOL_RETENTION` | retention | `86400` | В секундах; по умолчанию 24 ч, очищает старые записи `spool_events` и `spool_dlq`. |
+| `UI_PROXY_SPOOL_REPLAY_ENABLED` | background replay loop | `1` | Включает фоновую повторную доставку `pending/retryable` событий из sqlite-spool в `Art`. Отключать допустимо только для изолированной отладки и тестов. |
+| `UI_PROXY_SPOOL_REPLAY_BATCH_SIZE` | размер replay batch | `100` | Сколько событий UI Proxy берёт из `spool_events` за один проход фоновой доставки. |
+| `UI_PROXY_SPOOL_REPLAY_INTERVAL_SECONDS` | пауза между replay pass'ами | `5` | Интервал между проверками очереди, когда backlog пуст или `Art` по-прежнему недоступен. |
 | `ATTACHMENT_MAX_BYTES` | макс. размер вложения | `5242880` | 5 МБ по умолчанию; используется при `POST /ui/attachments`. |
 | `ATTACHMENT_SCANNER_CMD` | дефолтный сканер вложений | (напр. `clamscan`) | Команда запускает сканер; при `returncode=0` вложение безопасно, при `1` — блокируется с сообщением. |
 | `UI_PROXY_PORT`, `REACT_PORT` | локальные сервисы | `8090`, `5175` | Порты UI Proxy и React UI; `run.sh` выставляет их автоматически.
@@ -30,6 +36,7 @@
 - Attachment запрашивается только для mime из списка (`image/png`, `image/jpeg`, `text/plain`, `application/json`) и проверяется по magic signature.
 - Spool массивно очищается после `UI_PROXY_SPOOL_RETENTION` (24 ч), индексы покрывают `event_id`, `status`, `created_at` и DLQ по `event_id`.
 - При повторных неудачах (status `retryable`, `permanent`) UI Proxy отправляет per-event статус и, при необходимости, перемещает событие в `spool_dlq`.
+- `retryable` события теперь не остаются paper-only: они физически попадают в `spool_events`, а фоновый replay loop пытается доставить их без ручного запуска recovery-команды.
 - `UI Proxy` redacts Authorization/API-key теги (см. `HeaderSanitizer`), поэтому при логировании Authorization заменяется на `***REDACTED***`.
 - Аудит в SQLite (`spool_audit`) работает в append-only режиме: UPDATE/DELETE блокируются sqlite-триггерами и логируют `observability_gap.audit_tampering`.
 
@@ -44,4 +51,8 @@ journalctl --user -u my_langgraph_ui_proxy.service --since today
 REGART_INGEST_TOKEN=... UI_PROXY_PORT=8090 python scripts/load_test.py --simulate error_502 --events 50
 # Проверить mock Art + SSE
 python scripts/full_cycle_test.py
+# Проверить offline -> spool -> reconnect -> replay на живом uvicorn
+agent/.venv/bin/python scripts/spool_replay_cycle_test.py
+# Проверить sqlite-spool и replay backlog
+sqlite3 ~/.local/share/regart/ui_proxy_spool.db "SELECT id,event_id,status,try_count,last_error FROM spool_events ORDER BY id;"
 ```

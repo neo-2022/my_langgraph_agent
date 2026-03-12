@@ -76,6 +76,7 @@ async def proxied_client(tmp_path, monkeypatch):
     spool = Spool(path=spool_db)
     await spool.ensure_schema()
     monkeypatch.setattr(ui_proxy, "spool", spool)
+    monkeypatch.setenv("UI_PROXY_SPOOL_REPLAY_ENABLED", "0")
     transport = httpx.ASGITransport(app=ui_proxy.app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client, spool
@@ -114,10 +115,62 @@ async def test_partial_ack_response_moves_to_dlq_and_retry(proxied_client, monke
     conn = await spool._connection()
     cursor = await conn.execute("SELECT event_id, status FROM spool_events")
     rows = await cursor.fetchall()
-    assert rows == []  # retryable events stay out of spool during partial ack handling
+    assert rows == [(events[1]["event_id"], "pending")]
     dlq_cursor = await conn.execute("SELECT event_id, reason FROM spool_dlq")
     dlq = await dlq_cursor.fetchall()
     assert dlq and dlq[0][0] == events[2]["event_id"]
+
+
+@pytest.mark.anyio
+async def test_spool_replay_worker_drains_pending_after_recovery(proxied_client, monkeypatch):
+    _client, spool = proxied_client
+    events = [_sample_event(f"replay-{i}") for i in range(2)]
+    await spool.add_events(events, "test-client")
+    seen: Dict[str, Any] = {}
+
+    async def healthy_forward(evts, client_id, correlation_headers=None):
+        seen["events"] = [event["event_id"] for event in evts]
+        seen["client_id"] = client_id
+        return {
+            "ok": True,
+            "results": [{"event_id": event["event_id"], "status": "accepted"} for event in evts],
+        }
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", healthy_forward)
+
+    drained = await ui_proxy._drain_spool_once()
+    assert drained == len(events)
+    assert seen["events"] == [event["event_id"] for event in events]
+    assert seen["client_id"]
+
+    conn = await spool._connection()
+    pending_cursor = await conn.execute("SELECT COUNT(*) FROM spool_events")
+    pending = await pending_cursor.fetchone()
+    assert pending[0] == 0
+
+
+@pytest.mark.anyio
+async def test_spool_replay_worker_marks_retryable_after_failed_recovery(proxied_client, monkeypatch):
+    _client, spool = proxied_client
+    event = _sample_event("replay-retry")
+    await spool.add_events([event], "test-client")
+
+    async def failing_forward(_evts, _client_id, _correlation_headers=None):
+        raise httpx.RequestError("art still offline")
+
+    monkeypatch.setattr(ui_proxy, "_forward_to_art", failing_forward)
+
+    drained = await ui_proxy._drain_spool_once()
+    assert drained == 0
+
+    conn = await spool._connection()
+    cursor = await conn.execute("SELECT event_id, status, try_count, last_error FROM spool_events")
+    rows = await cursor.fetchall()
+    assert len(rows) == 1
+    assert rows[0][0] == event["event_id"]
+    assert rows[0][1] == "retryable"
+    assert rows[0][2] >= 1
+    assert "offline" in rows[0][3]
 
 
 @pytest.mark.anyio

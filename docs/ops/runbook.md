@@ -1,3 +1,6 @@
+modified_at: 2026-03-12 20:50 MSK
+Ручная сверка guide/docs: 2026-03-12 20:50 MSK
+
 # Runbook: критические ситуации REGART ↔ Art
 
 ## 1. DLQ не пуст (`spool_dlq` > 0)
@@ -10,7 +13,7 @@
 1. Убедиться, что Art доступен (`curl http://127.0.0.1:7331/openapi.json`).
 2. Перезапустить UI Proxy и LangGraph через systemd (см. раздел `Полезные команды`).
 3. Если backlog большой, вручную осмотреть `spool_dlq` (вложения, ошибки) и удалить записи с `DELETE FROM spool_dlq WHERE event_id='...';`.
-4. При необходимости — поправить `ART_INGEST_URL` / токен и дождаться новой доставки.
+4. При необходимости — поправить `ART_INGEST_URL` / токен и дождаться новой доставки: после возврата `Art` UI Proxy сам начнёт replay `pending/retryable` событий.
 
 ## 2. Спул повреждён (`sqlite3.DatabaseError` → `observability_gap.spool_corrupted`)
 **Как обнаружить**
@@ -46,4 +49,5 @@
 2. Если сервис остановлен, запустить `systemctl --user restart my_langgraph.service` (или `LANGGRAPH_SYSTEMD_SERVICE` override). Если `LANGGRAPH_SYSTEMD_SERVICE` установлен, используйте его имя.
 3. Убедиться, что LangGraph слушает `http://127.0.0.1:2024` (или `LANGGRAPH_BASE_URL`), и UI Proxy настроен на тот же `LANGGRAPH_BASE_URL`.
 4. Проверить логи: `journalctl --user -u my_langgraph.service -n 200` и `journalctl --user -u my_langgraph_ui_proxy.service -n 200`.
-5. Запустить `scripts/full_cycle_test.py` чтобы подтвердить, что цепочка работает.
+5. Проверить backlog в sqlite: `sqlite3 ~/.local/share/regart/ui_proxy_spool.db "SELECT id,event_id,status,try_count,last_error FROM spool_events ORDER BY id;"`.
+6. Запустить `scripts/full_cycle_test.py` чтобы подтвердить, что цепочка работает.

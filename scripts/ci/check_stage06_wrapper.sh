@@ -65,4 +65,8 @@ cd "${REPO_ROOT}/agent"
   tests/integration_tests/test_ui_art_ingest.py::test_retry_count_present_and_non_negative \
   tests/integration_tests/test_ui_art_ingest.py::test_audit_immutability_append_only
 
+echo "✔ running stage06 runtime spool replay cycle"
+cd "${REPO_ROOT}"
+agent/.venv/bin/python scripts/spool_replay_cycle_test.py
+
 echo "=== Stage06 gate PASS ==="
